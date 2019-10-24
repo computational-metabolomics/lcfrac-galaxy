@@ -965,7 +965,7 @@ def get_inchikey_sid(conn, table_nm, inchi_sid_d, pid='pid',
                     LEFT JOIN s_peaks AS sp ON sp.sid=sxs.sid
                     WHERE m.msnpy_convert_id NOT NULL 
     """.format(mid, score, score, weight, adduct, table_nm, pid)
-    print(sql_stmt)
+
     c.execute(sql_stmt)
     r = c.fetchall()
     return inchi_sid_d_update(r, inchi_sid_d, table_nm)
@@ -975,7 +975,6 @@ def inchi_sid_d_update(r, inchi_sid_d, table_nm):
     # multiple scans or energies that give the same inchikey annotation we
     # only keep the one with the best score (highest)
     for i in r:
-        print(i)
         inchi_sid = "{}_{}".format(i[0], i[1])
         rowd = {'mid': i[2], 'score': i[3], 'wscore': i[4], 'adduct': i[5]}
         if inchi_sid in inchi_sid_d:
