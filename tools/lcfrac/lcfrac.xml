@@ -1,0 +1,234 @@
+<tool id="lcfrac" name="LC-MS/MS fractionation processor - " version="0.0.1">
+    <description>
+        Combine and process spectra and annotation from LC-MS(/MS) experiment
+    </description>
+    <macros>
+        <import>macros.xml</import>
+    </macros>
+    <requirements>
+        <requirement type="package" version="1.0.0">msnpy</requirement>
+    </requirements>
+    <stdio>
+        <regex match="Cannot allocate memory"
+           source="stderr"
+           level="fatal_oom"
+           description="Out of memory error occurred" />
+    </stdio>
+    <command detect_errors="exit_code">
+    <![CDATA[
+        python '$__tool_directory__/lcfrac.py'
+           
+    ]]></command>
+    <inputs>
+        <param name="input" type="data" format="msp" label="MSP file (Output from Create MSP tool)"/>
+        <conditional name="db_select">
+            <param argument="--MetFragDatabaseType" type="select" label="Choose Compound Database">
+                <option value="PubChem" selected="true">PubChem</option>
+                <option value="KEGG">KEGG</option>
+                <option value="LocalCSV">Local database (csv)</option>
+                <option value="MetChem">MetChem</option>
+            </param>
+            <when value="MetChem">
+                <param argument="--LocalMetChemDatabaseServerIp" type="text" label="MetChem URL"/>
+            </when>
+            <when value="LocalCSV">
+                <param argument="--LocalDatabasePath" type="data" format="csv"
+                       label="Local database of compounds (CSV format)" />
+            </when>
+            <when value="KEGG"/>
+            <when value="PubChem"/>
+        </conditional>
+        <param argument="--DatabaseSearchRelativeMassDeviation" type="float" min="0" value="10"
+               label="Relative Mass Deviation for database search (ppm)"
+               help="A value in ppm that defines the deviation of theoretical masses in the database
+               vs. the measured masses"/>
+        <param argument="--FragmentPeakMatchRelativeMassDeviation" type="float" min="0" value="5"
+               label="Fragment Peak Match Relative Mass Deviation (ppm)"
+               help="Relative mass deviation in ppm of theoretical fragment peaks vs. measured fragment peaks" />
+        <param argument="--FragmentPeakMatchAbsoluteMassDeviation" type="float" min="0" value="0.001"
+               label="Fragment Peak Match Absolute Mass Deviation (Da)"
+               help="Absolute mass deviation in Dalton of theoretical fragment peaks vs. measured fragment peaks" />
+        <param argument="--polarity" type="select" label="Polarity"
+               help="The polarity used for the mode of acquisition">
+            <option value="pos" selected="true">Positive</option>
+            <option value="neg">Negative</option>
+        </param>
+        <param argument="--schema" type="select" label="Schema"
+               help="The schema used for the MSP file (auto will try automatically determine the schema)">
+            <option value="auto" selected="True">Auto</option>
+            <option value="msp">Generic MSP</option>
+            <option value="massbank">MassBank</option>
+        </param>
+        <param argument="--meta_select_col" type="select"
+               label="Choose how additional metadata columns are extracted"
+               help="The MetFrag output can have additional meta data columns added, these can be either extracted
+               from all MSP parameters or from the 'Name' and 'RECORD_TITLE' MSP parameter. Additionally, columns
+               can be added from the 'Name' or 'RECORD_TITLE' parameter by splitting on | and :
+               e.g. 'MZ:100.2 | RT:20 | xcms_grp_id:1' would create MZ,RT and xcms_grp_id columns">
+            <option value="name" selected="true">Extra metadata columns from the Name or RECORD_TITLE</option>
+            <option value="name_split">Extra metadata columns from the Name or RECORD_TITLE (each column is split on "|" and ":" ) </option>
+            <option value="all">Extra metadata columns from all MSP parameters</option>
+        </param>
+        <conditional name="suspectlist">
+            <param name="suspectselector" type="select" label="Suspect list"
+                   help="Choose whether to include a suspect list">
+                <option value="includesuspects" >Include suspect list</option>
+                <option value="excludesuspects" selected="True">Do not include suspect list</option>
+            </param>
+            <when value="includesuspects">
+                <conditional name="includesuspects_default_cond">
+                    <param name="includesuspects_default_bool" type="boolean"
+                           label="Use default list of suspect compounds?"
+                           help="Either provide a file containing a list of suspect compounds or a default file
+                                 of an aggregated list of in silico predicted MS/MS spectra of natural products
+                                 from the Universal Natural Products Database (http://pkuxxj.pku.edu.cn/UNPD/index.php).
+                                  The list is an aggregated version of the github repository https://github.com/oolonek/ISDB/tree/master/Data/dbs."/>
+                    <when value="true"/>
+                    <when value="false">
+                        <param argument="--ScoreSuspectLists" type="data" format="txt" optional="True"
+                               label="Suspect list file"  help="File containing a list of suspects inchikeys" />
+                    </when>
+                </conditional>
+                <expand macro="metfrag_scoring"/>
+            </when>
+            <when value="excludesuspects">
+                <expand macro="metfrag_scoring" suspectlistscore="False" weights="1.0,1.0"/>
+            </when>
+        </conditional>
+        <param argument="--minMSMSpeaks" type="integer" label="Minimum number of MS/MS peaks" value="0"/>
+        <param argument="--skip_invalid_adducts" type="boolean" label="Skip invalid or undefined adduct types?"
+               truevalue="--skip_invalid_adducts" falsevalue="" checked="true"
+               help="If no adduct type is provided within the MSP file or if the adduct type is not usable
+                     with MetFrag, set to 'yes' if these spectra should be skipped or 'no' if the default
+                     of [M+H]+ for pos data or [M-H]- for neg data should be used"/>
+        <section name="PreProcessFilter" title="PreProcessing filters" expanded="False">
+            <param argument="--UnconnectedCompoundFilter" type="boolean" checked="false"
+                   truevalue="--UnconnectedCompoundFilter" falsevalue=""
+                   label="filter non-connected compounds (e.g. salts)" help=""/>
+            <param argument="--IsotopeFilter" type="boolean" checked="false" truevalue="--IsotopeFilter"
+                   falsevalue="" label="filter compounds containing non-standard isotopes" help=""/>
+            <param argument="--FilterMinimumElements" type="text"
+                   optional="true" label="Minimum Elements Filter"
+                   help="Filter by minimum of contained elements. Ex: N2O3 include compounds with at least
+                         2 nitrogens and 3 oxygens">
+                <expand macro="text-alphanumeric-regex-validator"/>
+            </param>
+            <param argument="--FilterMaximumElements" type="text"
+                   optional="true" label="Maximum Elements Filter"
+                   help="Filter by maximum of contained elements. Ex: N5O7 filter out compounds with at
+                         maximum 5 nitrogens and 7 oxygens">
+                    <expand macro="text-alphanumeric-regex-validator"/>
+            </param>
+            <param argument="--FilterSmartsInclusionList" type="text"
+                   optional="true" label="Include substructures"
+                   help="Filter by presence of defined sub-structures. Ex: c1ccccc1 include compounds
+                         containing benzene"/>
+            <param argument="--FilterSmartsExclusionList" type="text"
+                   optional="true" label="Exclude substructures"
+                   help="Filter by absence of defined sub-structures. Ex: [OX2H] filter out compounds
+                         containing hydroxyl groups"/>
+            <param argument="--FilterIncludedElements" type="text"
+                   optional="true" label="Include elements"
+                   help="Filter by presence of defined elements (other elements are allowed).
+                         Ex: 'N,O' include compounds containing nitrogen and oxygen" >
+                <expand macro="text-alphanumeric-comma-regex-validator"/>
+            </param>
+            <param argument="--FilterIncludedExclusiveElements" type="text"
+                   optional="true" label="Include elements (exclusive)"
+                   help="Filter by presence of defined elements (no other elements are allowed).
+                         Ex: 'N,O' include compounds only composed of nitrogen and oxygen" >
+                <expand macro="text-alphanumeric-comma-regex-validator"/>
+            </param>
+            <param argument="--FilterExcludedElements" type="text"
+                   optional="true" label="Exclude elements"
+                   help="Filter by absence of defined sub-structures. Ex: 'Cl,Br' filter out
+                         compounds including bromine or chlorine">
+                <expand macro="text-alphanumeric-comma-regex-validator"/>
+            </param>
+        </section>
+        <section name="PostProcessFilter" title="PostProcessing filters" expanded="False">
+            <param argument="--score_thrshld" type="float" label="Threshold for score after MetFrag search"
+                   max="1" min="0" value="0"/>
+            <param argument="--pctexplpeak_thrshld" type="float" label="Minimum percentage of explain peaks"
+                   max="100" min="0" value="0"/>
+        </section>
+    </inputs>
+    <outputs>
+        <data name="results" format="tabular"/>
+    </outputs>
+    <tests>
+        <test>
+            <!-- Test "massbank" style data format  -->
+            <param name="input" value="massbank_format.txt"/>
+            <param name="schema" value="massbank"/>
+            <param name="skip_invalid_adducts" value="false"/>
+            <param name="MetFragDatabaseType" value="PubChem"/>
+            <param name="MetFragDatabaseType" value="LocalCSV"/>
+            <param name="LocalDatabasePath" value="demo_db.csv"/>
+            <output name="results" file="metfrag_massbank.tabular"/>
+        </test>
+        <test>
+            <!-- Test "generic" style data format  -->
+            <param name="input" value="generic_format.msp"/>
+            <param name="schema" value="msp"/>
+            <param name="MetFragDatabaseType" value="PubChem"/>
+            <param name="skip_invalid_adducts" value="false"/>
+            <param name="MetFragDatabaseType" value="LocalCSV"/>
+            <param name="LocalDatabasePath" value="demo_db.csv"/>
+            <output name="results" file="metfrag_msp.tabular"/>
+        </test>
+        <test>
+            <!-- Test PubChem API with "winter" dataset -->
+            <param name="input" value="winter_pos.msp"/>
+            <section name="PostProcessFilter">
+                <param name="score_thrshld" value="0.9"/>
+            </section>
+            <param name="MetFragDatabaseType" value="PubChem"/>
+            <output name="results" file="winter_pos.tabular"/>
+        </test>
+        <test>
+            <!-- Test actual MassBank data for Glucose -->
+            <param name="input" value="RP022611.txt"/>
+            <param name="MetFragDatabaseType" value="LocalCSV"/>
+            <param name="LocalDatabasePath" value="demo_db.csv"/>
+            <output name="results" file="RP022611.tabular"/>
+        </test>
+        <test>
+            <!-- Test actual MassBank data for Glucose (all metadata columns in output-->
+            <param name="input" value="RP022611.txt"/>
+            <param name="schema" value="massbank"/>
+            <param name="MetFragDatabaseType" value="LocalCSV"/>
+            <param name="LocalDatabasePath" value="demo_db.csv"/>
+            <param name="meta_select_col" value="all"/>
+            <output name="results" file="RP022611_all_col.tabular"/>
+        </test>
+        <test>
+            <!-- Test actual MassBank data for Glucose (include suspect list - default)-->
+            <param name="input" value="RP022611.txt"/>
+            <param name="schema" value="massbank"/>
+            <conditional name="suspectlist">
+                <param name="suspectselector" value="includesuspects"/>
+                <conditional name="includesuspects_default_cond">
+                    <param name="includesuspects_default_bool" value="true"/>
+                </conditional>
+            </conditional>
+            <output name="results" file="RP022611_suspect_default.txt"/>
+        </test>
+        <test>
+            <!-- Test invalid adduct -->
+            <param name="input" value="invalid_adduct.msp"/>
+            <param name="skip_invalid_adducts" value="true"/>
+            <output name="results" file="invalid_adduct_result.txt" ftype="tabular"/>
+        </test>
+    </tests>
+    <help>
+-------
+LC-Frac
+-------
+
+
+    </help>
+    <citations>
+        <citation type="doi">10.1186/s13321-016-0115-9</citation>
+    </citations>
+</tool> 
