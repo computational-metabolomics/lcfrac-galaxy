@@ -14,90 +14,6 @@ from dimspy.portals.hdf5_portal import load_peak_matrix_from_hdf5
 from dimspy.process.peak_alignment import align_peaks
 
 
-def create_db(file_pth):
-    """
-    """
-    conn = sqlite3.connect(file_pth)
-    c = conn.cursor()
-    # If not present then create
-    c.execute('''CREATE TABLE s_peaks (
-                          sid integer PRIMARY KEY,
-                          mz text NOT NULL,
-                          i date,
-                          pid integer,
-                          FOREIGN KEY(pid) REFERENCES s_peak_meta(pid)
-                          )'''
-              )
-
-    # If not present then create (check if additional columns are present)
-    c.execute('''CREATE TABLE s_peak_meta(
-                                   pid integer PRIMARY KEY,
-                                   msnpy_convert_id integer,
-                                   name text,
-                                   ms_level real,
-                                   precursor_mz real,
-                                   spectrum_type text,
-                                   well text
-                                   )'''
-              )
-
-    # If not present then create
-    c.execute('''CREATE TABLE c_peak_groups(
-                                        grpid integer PRIMARY KEY,
-                                        mz real,
-                                        mzmin real,
-                                        mzmax real,
-                                        rt real,
-                                        rtmin real,
-                                        rtmax real,
-                                        grp_name text
-                                   )'''
-              )
-
-    # If not present then create
-    c.execute('''CREATE TABLE c_peak_groups_X_s_peaks(
-                                        gxsid integer PRIMARY KEY,
-                                        grpid integer,
-                                        sid integer,
-                                        mzdiff real,
-                                        FOREIGN KEY(grpid) REFERENCES 
-                                        c_peak_groups(grpid),
-                                        FOREIGN KEY(sid) REFERENCES 
-                                        s_peaks(sid) 
-                                   )'''
-              )
-
-    # If not present then create
-    c.execute('''CREATE TABLE s_peaks_X_s_peaks(
-                                        sxsid integer PRIMARY KEY,
-                                        sid1 integer,
-                                        sid2 integer,
-                                        mzdiff real,
-                                        link_type text,
-                                        FOREIGN KEY(sid1) REFERENCES
-                                        s_peaks(sid), 
-                                        FOREIGN KEY(sid2) REFERENCES 
-                                        s_peaks(sid)
-                                   )'''
-              )
-
-    c.execute('''CREATE TABLE s_peak_meta_X_s_peaks(
-                                        smxsid integer PRIMARY KEY,
-                                        sid integer,
-                                        pid integer,
-                                        mzdiff real,
-                                        link_type text,
-                                        FOREIGN KEY(sid) REFERENCES 
-                                        s_peaks(sid), 
-                                        FOREIGN KEY(pid) REFERENCES 
-                                        s_peak_meta(pid)
-                                   )'''
-              )
-    conn.commit()
-
-    return conn, c
-
-
 def update_db(file_pth):
     """
     """
@@ -110,6 +26,9 @@ def update_db(file_pth):
         # this means that we are missing the dims specific columns
         c.execute('ALTER TABLE s_peak_meta ADD msnpy_convert_id integer')
         c.execute('ALTER TABLE s_peak_meta ADD well text')
+        c.execute('ALTER TABLE s_peak_meta ADD well_rtmin real')
+        c.execute('ALTER TABLE s_peak_meta ADD well_rtmax real')
+        c.execute('ALTER TABLE s_peak_meta ADD well_rt real')
 
         c.execute('''CREATE TABLE c_peak_groups_X_s_peaks(
                                         gxsid integer PRIMARY KEY,
@@ -293,7 +212,7 @@ def update_db(file_pth):
                                         inchikey text,	
                                         library_source_name text,	
                                         library_compound_name text
-                                        
+
                                    )'''
                   )
     elif 'msnpy_convert_id' not in cols:
@@ -341,6 +260,9 @@ def update_db(file_pth):
         c.execute('ALTER TABLE combined_annotations ADD ms1_lookup_id integer')
 
     conn.commit()
+
+    c.execute('CREATE UNIQUE INDEX inchikey ON metab_compound(inchikey);')
+
     return conn, c
 
 
@@ -384,6 +306,7 @@ def insert_query_m(data, table, conn, columns=None, db_type='mysql',
         else:
             stmt = "INSERT " + ignore_str + " INTO " + table + " VALUES (" + \
                    type + ")"
+        print(stmt)
         # execute query
         cursor = conn.cursor()
         cursor.executemany(stmt, data)
@@ -446,14 +369,17 @@ def max_row(conn, table, id):
     return pid
 
 
-def pm_sqlite(pm, conn, name, well, plid=0):
+def pm_sqlite(pm, conn, name, well, well_rtmin, well_rtmax, plid=0):
     cpid = max_row(conn, 's_peak_meta', 'pid')
-    s_peak_meta = [(cpid, name, 1, 'dimspy', well)]
+    s_peak_meta = [(cpid, name, 1, 'dimspy{}'.format(plid), well, well_rtmin,
+                    well_rtmax,
+                    np.mean([well_rtmin, well_rtmax]))]
     insert_query_m(s_peak_meta,
                    's_peak_meta',
                    conn=conn,
                    columns='pid, name, ms_level, '
-                           'spectrum_type, well',
+                           'spectrum_type,'
+                           'well, well_rtmin, well_rtmax, well_rt',
                    db_type='sqlite')
 
     csid = max_row(conn, 's_peaks', 'sid')
@@ -574,10 +500,9 @@ def lcms_dims_link(conn, time_tolerance, ppm_lcms,
                             """)
 
     lcms_rows = lcms_r.fetchall()
-    dims_r = cursor.execute("""SELECT sid, mz  FROM s_peaks 
-                               LEFT JOIN s_peak_meta AS spm 
-                               WHERE spm.pid={}""".
+    dims_r = cursor.execute("SELECT sid, mz  FROM s_peaks WHERE pid={}".
                             format(orig_dims_pid))
+
     dims_rows = dims_r.fetchall()
 
     well_seconds_low = frac_times_d[well]['frac_start_minutes'] * 60
@@ -586,15 +511,18 @@ def lcms_dims_link(conn, time_tolerance, ppm_lcms,
     matches = []
 
     for lcms_row in lcms_rows:
+
         # check if rtmin rtmax within range
         grpid = lcms_row[0]
         lcms_mz = lcms_row[1]
+
         lcms_mz_low, lcms_mz_high = ppm_tol_range(lcms_mz, ppm_lcms)
         lcms_seconds_low = lcms_row[2] - time_tolerance
         lcms_seconds_high = lcms_row[3] + time_tolerance
         if (lcms_seconds_high >= well_seconds_low) and \
                 (well_seconds_high >= lcms_seconds_low):
             for dims_row in dims_rows:
+
                 sid = dims_row[0]
                 dims_mz = dims_row[1]
                 dims_mz_low, dims_mz_high = ppm_tol_range(dims_mz,
@@ -602,7 +530,7 @@ def lcms_dims_link(conn, time_tolerance, ppm_lcms,
 
                 if (lcms_mz_high >= dims_mz_low) and \
                         (dims_mz_high >= lcms_mz_low):
-                    matches.append((sid, grpid, lcms_mz - dims_mz))
+                    matches.append((grpid, sid, lcms_mz - dims_mz))
 
     if matches:
         insert_query_m(matches,
@@ -632,22 +560,26 @@ def process_frac_spectra(tree_pth,
 
     dimsn_aligned_pm = align_peaks(dims_dimsn_pls, ppm=2)
 
+    well_rtmin = frac_times_d[well]['frac_start_minutes'] * 60
+    well_rtmax = frac_times_d[well]['frac_end_minutes'] * 60
+
     # Add all peaks from aligned_pm (as 2 scan events):
     #  1) The originally aligned peaks
     #  2) the MS1 precursors
     orig_dims_d, orig_dims_pid = pm_sqlite(dimsn_aligned_pm, conn,
                                            'original_aligned_peaklist',
-                                           well, 0)
+                                           well, well_rtmin, well_rtmax, 0)
 
     # msn aligned peaklist
     msn_prec_d, msn_prec_pid = pm_sqlite(dimsn_aligned_pm, conn,
-                                         'dimsn_ms1_precursors', well, 1)
+                                         'dimsn_ms1_precursors',
+                                         well, well_rtmin, well_rtmax, 1)
 
     # add the links
     pm_link_sqlite(dimsn_aligned_pm, orig_dims_d, msn_prec_d, conn)
 
     # add dimsn non merged peaklists
-    dimsn_sqlite(dimsn_non_merged_pls, msn_prec_d, msn_prec_pid, conn, well)
+    dimsn_sqlite(dimsn_non_merged_pls, msn_prec_d, msn_prec_pid, conn, well, )
 
     # add dimsn merged peaklist
     dimsn_sqlite(dimsn_merged_pls, msn_prec_d, msn_prec_pid, conn, well)
@@ -952,23 +884,25 @@ def sql_simple_select(conn, table_nm, cols="*"):
 
 
 def get_inchikey_sid(conn, table_nm, inchi_sid_d, pid='pid',
-                    mid="id", score='score',
-                    adduct='adduct', weight=1.0):
+                     mid="id", score='score',
+                     adduct='adduct', weight=1.0):
     # Need to update to only keep the best score (in case doing scan by scan)
 
     c = conn.cursor()
-    sql_stmt = """SELECT m.inchikey, sp.sid, m.{},
+    sql_stmt = """SELECT m.inchikey, spXsp.sid1, m.{},
                         m.{}, m.{}*{}, m.{} 
                     FROM {} AS m 
                     LEFT JOIN s_peak_meta AS spm ON spm.pid=m.{}
                     LEFT JOIN s_peak_meta_X_s_peaks AS sxs ON sxs.pid=spm.pid  
                     LEFT JOIN s_peaks AS sp ON sp.sid=sxs.sid
+                    LEFT JOIN s_peaks_X_s_peaks AS spXsp ON spXsp.sid2=sp.sid
                     WHERE m.msnpy_convert_id NOT NULL 
     """.format(mid, score, score, weight, adduct, table_nm, pid)
 
     c.execute(sql_stmt)
     r = c.fetchall()
     return inchi_sid_d_update(r, inchi_sid_d, table_nm)
+
 
 def inchi_sid_d_update(r, inchi_sid_d, table_nm):
     # NOTE we keep the best score for inchikey-mz-tablenm - so if we are using
@@ -980,7 +914,7 @@ def inchi_sid_d_update(r, inchi_sid_d, table_nm):
         if inchi_sid in inchi_sid_d:
             if table_nm in inchi_sid_d[inchi_sid]:
                 if float(rowd['wscore']) > float(inchi_sid_d[inchi_sid][
-                                                table_nm]['wscore']):
+                                                     table_nm]['wscore']):
                     inchi_sid_d[inchi_sid][table_nm] = rowd
             else:
                 inchi_sid_d[inchi_sid][table_nm] = rowd
@@ -990,9 +924,9 @@ def inchi_sid_d_update(r, inchi_sid_d, table_nm):
 
 
 def get_inchikey_sid_sirius(conn, weight):
-
+    # Note we want to get the sid for the original peak list
     c = conn.cursor()
-    c.execute("""SELECT mc.inchikey, sp.sid, c.id,
+    c.execute("""SELECT mc.inchikey, spXsp.sid1, c.id,
                         c.bounded_score, c.bounded_score*{} AS wscore,
                         c.adduct   
                     FROM 
@@ -1001,12 +935,14 @@ def get_inchikey_sid_sirius(conn, weight):
                   LEFT JOIN s_peak_meta AS spm ON spm.pid=c.pid
                   LEFT JOIN s_peak_meta_X_s_peaks AS sxs ON sxs.pid=spm.pid  
                   LEFT JOIN s_peaks AS sp ON sp.sid=sxs.sid
+                  LEFT JOIN s_peaks_X_s_peaks AS spXsp ON spXsp.sid2=sp.sid
                   WHERE c.pid NOT NULL    
     """.format(weight))
     r = c.fetchall()
     inchi_sid_d = {}
     table_nm = 'sirius_csifingerid_results'
     return inchi_sid_d_update(r, inchi_sid_d, table_nm)
+
 
 def add_to_row(results, name, row):
     if name in results:
@@ -1095,9 +1031,9 @@ def combine_annotations(conn, comp_conn, weights):
                  biosim_wscore
         # get overall adduct column
         adducts = set([str(sirius_d['adduct']),
-                      str(metfrag_d['adduct']),
-                      str(beams_d['adduct']),
-                      str(sm_d['adduct'])])
+                       str(metfrag_d['adduct']),
+                       str(beams_d['adduct']),
+                       str(sm_d['adduct'])])
         adducts = [a for a in adducts if a]
         adducts.remove('0')
         adduct_str = ",".join(adducts)
@@ -1212,7 +1148,9 @@ def process_all_fracs(dims_pl_dir,
         conn, cur = update_db(lcms_sqlite_pth)
     else:
         if out_sqlite:
-            conn, cur = create_db(out_sqlite)
+            # conn, cur = create_db(out_sqlite)
+            print("Requires LC-MS(/MS) sqlite database")
+            exit()
         else:
             conn, cur = create_db('frac_exp.sqlite')
 
@@ -1224,10 +1162,10 @@ def process_all_fracs(dims_pl_dir,
         dr = csv.DictReader(ft)
         for row in dr:
             frac_times_d[row['well']] = {'frac_num': int(row['frac_num']),
-                                         'frac_start_minutes': float(row[
-                                                                         'frac_start_minutes']),
-                                         'frac_end_minutes': float(row[
-                                                                       'frac_end_minutes']),
+                                         'frac_start_minutes':
+                                             float(row['frac_start_minutes']),
+                                         'frac_end_minutes':
+                                             float(row['frac_end_minutes']),
                                          }
 
     for well, spths in frac_spectra.items():
@@ -1257,6 +1195,174 @@ def process_all_fracs(dims_pl_dir,
 
     # create summary table
     # Include both the LC-MS and DI-MS annotations
+    summarise_annotations(conn, 'test.tsv')
+
+
+def summarise_annotations(conn, out_file, rank_limit=100):
+    # Creat two summary tables (one for LC and one for DIMS and then output
+    # to single csv file
+    c = conn.cursor()
+    sql_stmt = """
+       SELECT
+       'dims' AS ms_type, 
+       sp.sid,
+       '' AS grpid,
+       '' AS grp_name,
+       round(sp.mz, 6) AS mz,
+       round(sp.i, 2) AS i,
+       round(spm.well_rt, 3) AS rt,
+       round(spm.well_rtmin,3) AS rtmin,
+       round(spm.well_rtmax,3) AS rtmax,
+       GROUP_CONCAT(DISTINCT (CAST (cpgXsp.grpid AS INTEGER) ) ) AS lc_grpid_mtchs,
+       '' AS dims_sid_mtchs,
+       spm.well,  
+       mc.inchi,
+       mc.inchikey,
+       mc.inchikey1,
+       mc.inchikey2,
+       mc.inchikey3,
+       mc.name,
+       mc.exact_mass,
+       mc.molecular_formula,
+       mc.pubchem_cids,
+       mc.kegg_cids,
+       mc.kegg_brite,
+       mc.kegg_drugs,
+       mc.hmdb_ids,
+       mc.hmdb_bio_custom_flag,
+       mc.hmdb_drug_flag,
+       mc.biosim_max_count,
+       mc.biosim_hmdb_ids,
+       '' AS fragmentation_acquistion_num,
+       '' AS mean_precursor_ion_purity,
+       l.accession,
+       l.id AS lpid,
+       ca.sirius_score,
+       ca.sirius_wscore,
+       ca.metfrag_score,
+       ca.metfrag_wscore,
+       ca.sm_score,
+       ca.sm_wscore,
+       ca.probmetab_score,
+       ca.probmetab_wscore,
+       ca.ms1_lookup_score,
+       ca.ms1_lookup_wscore,
+       mc.biosim_max_score,
+       ca.biosim_wscore,
+       ca.wscore,
+       ca.rank,
+       ca.adduct_overall
+    FROM s_peaks AS sp
+       LEFT JOIN
+       combined_annotations AS ca ON sp.sid = ca.sid
+       LEFT JOIN
+       metab_compound AS mc ON ca.inchikey = mc.inchikey
+       LEFT JOIN
+       l_s_peak_meta AS l ON l.id = ca.sm_lpid
+       LEFT JOIN
+       s_peak_meta AS spm ON spm.pid = sp.pid
+       LEFT JOIN
+       c_peak_groups_X_s_peaks AS cpgXsp ON cpgXsp.sid = sp.sid
+
+    WHERE (sp.sid IS NOT NULL) AND (IFNULL(ca.rank<={}, 1)) AND  (
+    spm.spectrum_type IS 'dimspy0')
+    GROUP BY sp.sid,
+             IFNULL(ca.inchikey, sp.sid)
+    ORDER BY sp.sid,
+             IFNULL(ca.rank, sp.sid)
+    """.format(rank_limit)
+
+    r = c.execute(sql_stmt)
+    dims_annotations = r.fetchall()
+
+    sql_stmt = """    SELECT 
+       'lcms' AS ms_type,
+       '' AS sid,
+       cpg.grpid,
+       cpg.grp_name,
+       round(cpg.mz, 6) AS mz,
+       ROUND(AVG(cp._into),3) AS i,
+       round(cpg.rt, 3) AS rt,
+       round(cpg.rtmin,3) AS rtmin,
+       round(cpg.rtmax,3) AS rtmax,
+       '' AS lcms_grpid_mtchs,
+       GROUP_CONCAT(DISTINCT (CAST (cpgXsp.sid AS INTEGER) ) ) AS dims_sid_mtchs,
+       spm.well,  
+       mc.inchi,
+       mc.inchikey,
+       mc.inchikey1,
+       mc.inchikey2,
+       mc.inchikey3,
+       mc.name,
+       mc.exact_mass,
+       mc.molecular_formula,
+       mc.pubchem_cids,
+       mc.kegg_cids,
+       mc.kegg_brite,
+       mc.kegg_drugs,
+       mc.hmdb_ids,
+       mc.hmdb_bio_custom_flag,
+       mc.hmdb_drug_flag,
+       mc.biosim_max_count,
+       mc.biosim_hmdb_ids,
+       GROUP_CONCAT(DISTINCT(cast(spm.acquisitionNum  as INTEGER) )) AS fragmentation_acquistion_num,
+       ROUND(AVG(spm.inPurity),3) AS mean_precursor_ion_purity,
+       l.accession,
+       l.id AS lpid,
+       ca.sirius_score,
+       ca.sirius_wscore,
+       ca.metfrag_score,
+       ca.metfrag_wscore,
+       ca.sm_score,
+       ca.sm_wscore,
+       ca.probmetab_score,
+       ca.probmetab_wscore,
+       ca.ms1_lookup_score,
+       ca.ms1_lookup_wscore,
+       mc.biosim_max_score,
+       ca.biosim_wscore,
+       ca.wscore,
+       ca.rank,
+       ca.adduct_overall
+    FROM c_peak_groups AS cpg
+    LEFT JOIN
+    combined_annotations AS ca ON ca.grpid=cpg.grpid
+    LEFT JOIN
+    metab_compound AS mc ON ca.inchikey = mc.inchikey
+    LEFT JOIN
+    l_s_peak_meta AS l ON l.id = ca.sm_lpid
+    LEFT JOIN
+    c_peak_groups_X_s_peaks AS cpgXsp ON cpgXsp.grpid = cpg.grpid
+    LEFT JOIN
+    c_peak_X_c_peak_group AS cpXcpg ON cpXcpg.grpid = cpg.grpid
+    LEFT JOIN
+    c_peaks AS cp ON cp.cid = cpXcpg.cid
+    LEFT JOIN
+    c_peak_X_s_peak_meta AS cpXspm ON cpXspm.cid = cp.cid
+    LEFT JOIN
+    s_peak_meta AS spm ON spm.pid = cpXspm.pid
+    LEFT JOIN
+    fileinfo AS fi ON fi.fileid = spm.fileid
+
+    WHERE IFNULL(ca.rank<={}, 1) AND fi.class NOT LIKE '%blank%'
+    GROUP BY
+     cpg.grpid,
+     IFNULL(ca.inchikey, cpg.grpid)
+    ORDER BY 
+     cpg.grpid, 
+     IFNULL(ca.rank, cpg.grpid)
+    """.format(rank_limit)
+
+    r = c.execute(sql_stmt)
+    lcms_annotations = r.fetchall()
+    colnames = list(map(lambda x: x[0], c.description))
+
+    with open(out_file, 'w') as summary_f:
+
+        sw = csv.writer(summary_f, delimiter='\t')
+        sw.writerow(colnames)
+        sw.writerows(lcms_annotations)
+        sw.writerows(dims_annotations)
 
 
 if __name__ == "__main__":

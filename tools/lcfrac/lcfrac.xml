@@ -2,9 +2,6 @@
     <description>
         Combine and process spectra and annotation from LC-MS(/MS) experiment
     </description>
-    <macros>
-        <import>macros.xml</import>
-    </macros>
     <requirements>
         <requirement type="package" version="1.0.0">msnpy</requirement>
     </requirements>
