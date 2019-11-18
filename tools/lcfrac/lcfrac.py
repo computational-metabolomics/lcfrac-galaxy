@@ -1,10 +1,12 @@
 #!/usr/bin/env python
 from __future__ import absolute_import, unicode_literals, print_function
+import configparser
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 import numpy as np
 import shutil
 import sys
 import os
+import re
 import sqlite3
 import csv
 from scipy.stats import rankdata
@@ -19,95 +21,91 @@ def update_db(file_pth):
     """
     conn = sqlite3.connect(file_pth)
     c = conn.cursor()
-    r = c.execute('PRAGMA table_info(s_peak_meta)')
-    cols = [i[1] for i in r.fetchall()]
+    # this means that we are missing the dims specific columns
+    c.execute('ALTER TABLE s_peak_meta ADD msnpy_convert_id integer')
+    c.execute('ALTER TABLE s_peak_meta ADD well text')
+    c.execute('ALTER TABLE s_peak_meta ADD well_rtmin real')
+    c.execute('ALTER TABLE s_peak_meta ADD well_rtmax real')
+    c.execute('ALTER TABLE s_peak_meta ADD well_rt real')
 
-    if 'msnpy_convert_id' not in cols:
-        # this means that we are missing the dims specific columns
-        c.execute('ALTER TABLE s_peak_meta ADD msnpy_convert_id integer')
-        c.execute('ALTER TABLE s_peak_meta ADD well text')
-        c.execute('ALTER TABLE s_peak_meta ADD well_rtmin real')
-        c.execute('ALTER TABLE s_peak_meta ADD well_rtmax real')
-        c.execute('ALTER TABLE s_peak_meta ADD well_rt real')
+    c.execute('ALTER TABLE s_peaks ADD adduct real')
+    c.execute('ALTER TABLE s_peaks ADD isotopes real')
+    c.execute('ALTER TABLE s_peaks ADD dims_predicted_precursor_ion_purity real')
 
-        c.execute('''CREATE TABLE c_peak_groups_X_s_peaks(
-                                        gxsid integer PRIMARY KEY,
-                                        grpid integer,
-                                        sid integer,
-                                        mzdiff real,
-                                        FOREIGN KEY(grpid) REFERENCES 
-                                        c_peak_groups(grpid),
-                                        FOREIGN KEY(sid) REFERENCES 
-                                        s_peaks(sid) 
-                                   )'''
+    c.execute('''CREATE TABLE c_peak_groups_X_s_peaks(
+                                     gxsid integer PRIMARY KEY,
+                                     grpid integer,
+                                     sid integer,
+                                     mzdiff real,
+                                     FOREIGN KEY(grpid) REFERENCES 
+                                     c_peak_groups(grpid),
+                                     FOREIGN KEY(sid) REFERENCES 
+                                     s_peaks(sid) 
+                                )'''
+              )
+
+    c.execute('''CREATE TABLE s_peaks_X_s_peaks(
+                                     sxsid integer PRIMARY KEY,
+                                     sid1 integer,
+                                     sid2 integer,
+                                     mzdiff real,
+                                     link_type text,
+                                     FOREIGN KEY(sid1) REFERENCES
+                                     s_peaks(sid), 
+                                     FOREIGN KEY(sid2) REFERENCES 
+                                     s_peaks(sid)
+                                )'''
+              )
+
+    c.execute('''CREATE TABLE s_peak_meta_X_s_peaks(
+                                     smxsid integer PRIMARY KEY,
+                                     sid integer,
+                                     pid integer,
+                                     mzdiff real,
+                                     link_type text,
+                                     FOREIGN KEY(sid) REFERENCES 
+                                     s_peaks(sid), 
+                                     FOREIGN KEY(pid) REFERENCES 
+                                     s_peak_meta(pid)
+                                )'''
+              )
+
+    r = c.execute('PRAGMA table_info(ms1_lookup_results)')
+    cols = r.fetchall()
+    if not cols:
+        c.execute('''CREATE TABLE ms1_lookup_results(
+                                                id integer PRIMARY KEY,
+                                                grpid integer,
+                                                sid integer,
+                                                name text,	
+                                                mz real,
+                                                rt	real,
+                                                intensity real,
+                                                exact_mass real,
+                                                ppm_error real,	
+                                                adduct text,
+                                                C integer,
+                                                H integer,
+                                                N integer,
+                                                O integer,
+                                                P integer,	
+                                                S integer,
+                                                molecular_formula text,	
+                                                compound_name text,
+                                                compound_id text,
+                                                inchikey text,
+                                                score real,
+                                                FOREIGN KEY(grpid) REFERENCES 
+                                                    c_peak_groups(grpid), 
+                                                FOREIGN KEY(pid) REFERENCES 
+                                                    s_peak_meta(pid)
+                                           )'''
                   )
-
-        c.execute('''CREATE TABLE s_peaks_X_s_peaks(
-                                        sxsid integer PRIMARY KEY,
-                                        sid1 integer,
-                                        sid2 integer,
-                                        mzdiff real,
-                                        link_type text,
-                                        FOREIGN KEY(sid1) REFERENCES
-                                        s_peaks(sid), 
-                                        FOREIGN KEY(sid2) REFERENCES 
-                                        s_peaks(sid)
-                                   )'''
-                  )
-
-        c.execute('''CREATE TABLE s_peak_meta_X_s_peaks(
-                                        smxsid integer PRIMARY KEY,
-                                        sid integer,
-                                        pid integer,
-                                        mzdiff real,
-                                        link_type text,
-                                        FOREIGN KEY(sid) REFERENCES 
-                                        s_peaks(sid), 
-                                        FOREIGN KEY(pid) REFERENCES 
-                                        s_peak_meta(pid)
-                                   )'''
-                  )
-
-        r = c.execute('PRAGMA table_info(ms1_lookup_results)')
-        cols = r.fetchall()
-        if not cols:
-            c.execute('''CREATE TABLE ms1_lookup_results(
-                                            id integer PRIMARY KEY,
-                                            grpid integer,
-                                            pid integer,
-                                            msnpy_convert_id	integer,
-                                            well text,
-                                            name text,	
-                                            mz real,
-                                            rt	real,
-                                            intensity real,
-                                            exact_mass real,
-                                            ppm_error real,	
-                                            adduct text,
-                                            C integer,
-                                            H integer,
-                                            N integer,
-                                            O integer,
-                                            P integer,	
-                                            S integer,
-                                            molecular_formula text,	
-                                            compound_name text,
-                                            compound_id text,
-                                            inchikey text,
-                                            score real,
-                                            FOREIGN KEY(grpid) REFERENCES 
-                                                c_peak_groups(grpid), 
-                                            FOREIGN KEY(pid) REFERENCES 
-                                                s_peak_meta(pid)
-                                       )'''
-                      )
-        elif 'msnpy_convert_id' not in cols:
-            c.execute('ALTER TABLE ms1_lookup_results ADD id integer')
-            c.execute(
-                'ALTER TABLE ms1_lookup_results ADD msnpy_convert_id integer')
-            c.execute('ALTER TABLE ms1_lookup_results ADD pid integer')
-            c.execute('ALTER TABLE ms1_lookup_results ADD well text')
-            c.execute('ALTER TABLE ms1_lookup_results ADD inchikey text')
+    elif 'msnpy_convert_id' not in cols:
+        c.execute('ALTER TABLE ms1_lookup_results ADD id integer')
+        c.execute('ALTER TABLE ms1_lookup_results ADD sid integer')
+        c.execute('ALTER TABLE ms1_lookup_results ADD score real')
+        # c.execute('ALTER TABLE ms1_lookup_results ADD inchikey text')
 
     r = c.execute('PRAGMA table_info(sirius_csifingerid_results)')
     cols = r.fetchall()
@@ -119,11 +117,11 @@ def update_db(file_pth):
                                         msnpy_convert_id	integer,
                                         adduct text,
                                         inchikey2D text,
-                                        InChI text,
+                                        inchi text,
                                         molecularFormula text,
-                                        Rank integer,	
-                                        Score real,
-                                        Name text,
+                                        rank integer,	
+                                        score real,
+                                        name text,
                                         smiles text,
                                         xlogp real,	
                                         pubchemids text,
@@ -141,8 +139,6 @@ def update_db(file_pth):
                   'msnpy_convert_id '
                   'integer')
         c.execute('ALTER TABLE sirius_csifingerid_results ADD pid integer')
-        c.execute('ALTER TABLE sirius_csifingerid_results ADD well text')
-        c.execute('ALTER TABLE sirius_csifingerid_results ADD mz real')
 
     r = c.execute('PRAGMA table_info(metfrag_results)')
     cols = r.fetchall()
@@ -167,7 +163,7 @@ def update_db(file_pth):
                                         MaximumTreeDepth text,	
                                         MolecularFormula text,	
                                         MonoisotopicMass real,
-                                        Name text,	
+                                        name text,	
                                         NoExplPeaks real,
                                         NumberPeaksUsed real,	
                                         SMILES text,
@@ -183,7 +179,7 @@ def update_db(file_pth):
         c.execute('ALTER TABLE metfrag_results ADD msnpy_convert_id integer')
         c.execute('ALTER TABLE metfrag_results ADD pid integer')
         c.execute('ALTER TABLE metfrag_results ADD well text')
-        c.execute('ALTER TABLE metfrag_results ADD mz real')
+        #c.execute('ALTER TABLE metfrag_results ADD mz real')
 
     r = c.execute('PRAGMA table_info(sm_matches)')
     cols = r.fetchall()
@@ -257,7 +253,7 @@ def update_db(file_pth):
 
     elif 'sid' not in cols:
         c.execute('ALTER TABLE combined_annotations ADD sid integer')
-        c.execute('ALTER TABLE combined_annotations ADD ms1_lookup_id integer')
+        #c.execute('ALTER TABLE combined_annotations ADD ms1_lookup_id integer')
 
     conn.commit()
 
@@ -552,7 +548,7 @@ def process_frac_spectra(tree_pth,
     dimsn_merged_pls, \
     dimsn_precursors_pl = tree2peaklist(tree_pth, adjust_mz=False)
 
-    dims_pm = load_peak_matrix_from_hdf5(dims_pm_pth, compatibility_mode=True)
+    dims_pm = load_peak_matrix_from_hdf5(dims_pm_pth, compatibility_mode=False)
 
     orig_align_dims_pl = dims_pm.to_peaklist('orig_align_peaklist')
 
@@ -594,12 +590,12 @@ def process_frac_spectra(tree_pth,
                    well)
 
     cursor = conn.cursor()
-    r = cursor.execute("SELECT pid, msnpy_convert_id FROM s_peak_meta WHERE "
+    msnpy_convert_r = cursor.execute("SELECT pid, msnpy_convert_id FROM s_peak_meta WHERE "
                        "well='{}'".format(well))
-    return {spm[1]: spm[0] for spm in r.fetchall()}
+    return {spm[1]: spm[0] for spm in msnpy_convert_r.fetchall()}
 
 
-def add_beams(beams_pth, conn, comp_conn, pid_d, ms1_lookup_source='hmdb'):
+def add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts,  ms1_lookup_checkAdducts, ms1_lookup_source, well):
     '''
     '''
     if ms1_lookup_source == 'hmdb':
@@ -614,15 +610,27 @@ def add_beams(beams_pth, conn, comp_conn, pid_d, ms1_lookup_source='hmdb'):
     else:
         return 0
 
+    select ="""SELECT sp.mz, sp.sid, sp.adduct, sp.isotopes
+                    FROM s_peaks AS sp
+                    LEFT JOIN s_peak_meta AS spm ON spm.pid=sp.pid
+                    WHERE spm.name = 'original_aligned_peaklist' AND spm.well='{}'
+            """.format(well)
+    cursor = conn.cursor()
+    mz_d = {round(float(i[0]), 8): {'sid': int(i[1]),
+                                    'adduct': i[2],
+                                    'isotopes': i[3]} for i in cursor.execute(select)}
+
+
     c = max_row(conn, 'ms1_lookup_results', 'id')
+
+    c_curs = comp_conn.cursor()
 
     with open(beams_pth, 'r') as bf:
         dr = csv.DictReader(bf, delimiter='\t')
         rows = []
 
         for drow in dr:
-            curs = comp_conn.cursor()
-            r = curs.execute("""SELECT inchikey FROM {} WHERE
+            r = c_curs.execute("""SELECT inchikey FROM {} WHERE
                                                {}='{}'
                                          """.format(table_nm,
                                                     column_nm,
@@ -632,31 +640,46 @@ def add_beams(beams_pth, conn, comp_conn, pid_d, ms1_lookup_source='hmdb'):
                 inchikey = 'unknown'
             else:
                 inchikey = inchikey_r[0][0]
-            pid = pid_d[int(drow['msnpy_convert_id'])]
-            rows.append((int(c),
-                         int(pid),
-                         int(drow['msnpy_convert_id']),
-                         drow['well'],
+
+            # get pid from mz and well
+            sidi = mz_d[round(float(drow['mz']), 8)]
+
+            kal = ms1_lookup_keepAdducts.split(',')
+
+            if (ms1_lookup_keepAdducts and sidi['adduct'] in kal) or (ms1_lookup_checkAdducts and drow['adduct'] in
+                                                                      sidi['adduct']):
+                valid_adduct = True
+            elif not ms1_lookup_keepAdducts and not ms1_lookup_checkAdducts:
+                valid_adduct = True
+            else:
+                valid_adduct = False
+
+            if not valid_adduct:
+                continue
+
+            rows.append((c,
+                         sidi['sid'],
                          drow['name'],
                          float(drow['mz']),
-                         float(drow['exact_mass']),
-                         float(drow['ppm_error']),
+                         drow['exact_mass'],
+                         drow['ppm_error'],
                          drow['adduct'],
-                         int(drow['C']),
-                         int(drow['H']),
-                         int(drow['N']),
-                         int(drow['O']),
-                         int(drow['P']),
-                         int(drow['S']),
+                         drow['C'],
+                         drow['H'],
+                         drow['N'],
+                         drow['O'],
+                         drow['P'],
+                         drow['S'],
                          drow['molecular_formula'],
                          drow['compound_name'],
                          drow['compound_id'],
                          inchikey,
                          1  # score is always 1 for beams
                          ))
+
             c += 1
 
-    cols = "id, pid, msnpy_convert_id,well, name, mz, exact_mass, " \
+    cols = "id, sid, name, mz, exact_mass, " \
            "ppm_error," \
            "adduct,C,H,N,O,P,S,molecular_formula,compound_name,compound_id," \
            " inchikey, score"
@@ -666,6 +689,33 @@ def add_beams(beams_pth, conn, comp_conn, pid_d, ms1_lookup_source='hmdb'):
                    conn,
                    columns=cols,
                    db_type='sqlite')
+
+
+def add_additional_peak_info(additional_peak_info_pth, conn, well):
+    '''
+    '''
+    select ="""SELECT sp.mz, sp.sid
+                    FROM s_peaks AS sp
+                    LEFT JOIN s_peak_meta AS spm ON spm.pid=sp.pid
+                    WHERE spm.name = 'original_aligned_peaklist' AND spm.well='{}'
+            """.format(well)
+    cursor = conn.cursor()
+    sid_mz_d = {round(float(i[0]), 8): int(i[1]) for i in cursor.execute(select)}
+
+    cursor = conn.cursor()
+    with open(additional_peak_info_pth, 'r') as bf:
+        dr = csv.DictReader(bf, delimiter='\t')
+        for drow in dr:
+            # get pid from mz and well
+            sid = sid_mz_d[round(float(drow['mz']), 8)]
+            stmt = """UPDATE s_peaks SET adduct='{}',isotopes='{}',dims_predicted_precursor_ion_purity={}
+                    WHERE sid={}""".format(
+                                    drow['adduct'] if 'adduct' in drow else None,
+                                    drow['isotopes'] if 'isotopes' in drow else None,
+                                    drow['medianPurity'] if 'medianPurity' in drow else None,
+                                    sid)
+            cursor.execute(stmt)
+            conn.commit()
 
 
 def add_metfrag(metfrag_pth, conn, pid_d):
@@ -679,12 +729,15 @@ def add_metfrag(metfrag_pth, conn, pid_d):
         rows = []
 
         for drow in dr:
-            pid = pid_d[int(drow['msnpy_convert_id'])]
+            pn = parse_name(drow['name'], pid_d)
+            if not pn:
+                continue
+
             rows.append((int(c),
-                         int(pid),
-                         int(drow['msnpy_convert_id']),
-                         drow['adduct'],
-                         drow['CompoundName'],
+                         pn['pid'],
+                         pn['msnpy_convert_id'],
+                         drow['adduct'] if 'adduct' in drow else None,
+                         drow['CompoundName'] if 'CompoundName' in drow else None,
                          drow['ExplPeaks'],
                          drow['FormulasOfExplPeaks'],
                          drow['FragmenterScore'],
@@ -694,11 +747,10 @@ def add_metfrag(metfrag_pth, conn, pid_d):
                          drow['InChIKey'],
                          drow['InChIKey1'],
                          drow['InChIKey2'],
-                         drow['InChIKey3'],
+                         drow['InChIKey3'] if 'InChiKey3'in drow else None,
                          drow['MaximumTreeDepth'],
                          drow['MolecularFormula'],
                          drow['MonoisotopicMass'],
-                         drow['Name'],
                          drow['NoExplPeaks'],
                          drow['NumberPeaksUsed'],
                          drow['SMILES'],
@@ -709,7 +761,7 @@ def add_metfrag(metfrag_pth, conn, pid_d):
     cols = "id, pid, msnpy_convert_id, adduct, CompoundName, ExplPeaks," \
            "FormulasOfExplPeaks, FragmenterScore, FragmenterScore_Values, " \
            "Identifier, InChI, InChIKey, InChIKey1, InChIKey2, InChIKey3," \
-           "MaximumTreeDepth, MolecularFormula,MonoisotopicMass,Name," \
+           "MaximumTreeDepth, MolecularFormula,MonoisotopicMass," \
            "NoExplPeaks,NumberPeaksUsed, SMILES, Score"
 
     insert_query_m(rows,
@@ -728,10 +780,13 @@ def add_spectral_matching(spectral_matching_pth, conn, pid_d):
         rows = []
 
         for drow in dr:
-            pid = pid_d[int(drow['msnpy_convert_id'])]
+            pn = parse_name(drow['query_entry_name'], pid_d)
+            if not pn:
+                continue
+
             rows.append((int(c),
-                         int(pid),
-                         int(drow['msnpy_convert_id']),
+                         pn['pid'],
+                         pn['msnpy_convert_id'],
                          drow['lpid'],
                          drow['dpc'],
                          drow['rdpc'],
@@ -777,6 +832,16 @@ def neg_min_max(x):
         xn = (x - min(x)) / (max(x) - min(x))
         return abs(xn - 1)
 
+def parse_name(name, pid_d):
+    mtch = re.search('^header (.*)\|.*msnpy_convert_id (\d+).*', name)
+    if not mtch:
+        return None
+    else:
+        header = mtch.group(1)
+        msnpy_convert_id = int(mtch.group(2))
+        pid = pid_d[msnpy_convert_id]
+    return {'h':header, 'msnpy_convert_id':msnpy_convert_id, 'pid':pid}
+
 
 def add_sirius(sirius_pth, conn, pid_d):
     '''
@@ -788,18 +853,23 @@ def add_sirius(sirius_pth, conn, pid_d):
         c = max_row(conn, 'sirius_csifingerid_results', 'id')
         annotation_group = {}
         for drow in dr:
-            pid = pid_d[int(drow['msnpy_convert_id'])]
+            pn = parse_name(drow['name'], pid_d)
+            if not pn:
+                continue
+            else:
+                pid = pn['pid']
+                msnpy_convert_id = pn['msnpy_convert_id']
+
             rows.append((c,
                          pid,
-                         drow['msnpy_convert_id'],
-                         drow['well'],
-                         drow['adduct'],
+                         msnpy_convert_id,
+                         drow['adduct'] if 'adduct' in drow else None,
                          drow['inchikey2D'],
-                         drow['InChI'],
+                         drow['inchi'],
                          drow['molecularFormula'],
-                         drow['Rank'],
-                         drow['Score'],
-                         drow['Name'],
+                         drow['rank'],
+                         drow['score'],
+                         drow['name'],
                          drow['smiles'],
                          drow['xlogp'],
                          drow['pubchemids'],
@@ -807,7 +877,7 @@ def add_sirius(sirius_pth, conn, pid_d):
                          ))
             if pid not in annotation_group:
                 annotation_group[pid] = {}
-            annotation_group[pid][c] = float(drow['Score'])
+            annotation_group[pid][c] = float(drow['score'])
             c += 1
 
     ##################
@@ -827,7 +897,7 @@ def add_sirius(sirius_pth, conn, pid_d):
     # add bounded score to rows
     rows = [row + (bounded_score_d[row[0]],) for row in rows]
 
-    cols = "id, pid, msnpy_convert_id, well, adduct, inchikey2D, InChI, " \
+    cols = "id, pid, msnpy_convert_id, adduct, inchikey2D, InChI, " \
            "molecularFormula," \
            "Rank, Score, Name, smiles, xlogp, pubchemids, links, bounded_score"
 
@@ -839,12 +909,20 @@ def process_frac_annotation(beams_pth,
                             sirius_pth,
                             metfrag_pth,
                             spectral_matching_pth,
+                            additional_peak_info_pth,
                             conn,
                             pid_d,
                             ms1_lookup_source,
-                            comp_conn):
+                            comp_conn,
+                            well,
+                            ms1_lookup_keepAdducts,
+                            ms1_lookup_checkAdducts):
+
+    # write additional peak info (camera isotope/adduct annotations and precursor ion purity)
+    add_additional_peak_info(additional_peak_info_pth, conn, well)
+
     # write beams to sqlite database
-    add_beams(beams_pth, conn, comp_conn, pid_d, ms1_lookup_source)
+    add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts, ms1_lookup_checkAdducts, ms1_lookup_source, well)
 
     # write sirius to sqlite database
     add_sirius(sirius_pth, conn, pid_d)
@@ -909,6 +987,9 @@ def inchi_sid_d_update(r, inchi_sid_d, table_nm):
     # multiple scans or energies that give the same inchikey annotation we
     # only keep the one with the best score (highest)
     for i in r:
+        if not i[0]:
+            # no annotation (with inchikey  so skip)
+            continue
         inchi_sid = "{}_{}".format(i[0], i[1])
         rowd = {'mid': i[2], 'score': i[3], 'wscore': i[4], 'adduct': i[5]}
         if inchi_sid in inchi_sid_d:
@@ -942,6 +1023,18 @@ def get_inchikey_sid_sirius(conn, weight):
     inchi_sid_d = {}
     table_nm = 'sirius_csifingerid_results'
     return inchi_sid_d_update(r, inchi_sid_d, table_nm)
+
+
+def get_inchikey_sid_beams(conn, weight, inchi_sid_d):
+    # Note we want to get the sid for the original peak list
+    c = conn.cursor()
+    c.execute("""SELECT inchikey, sid, id, score, score*{} AS wscore, adduct
+                    FROM ms1_lookup_results   WHERE sid NOT NULL  
+    """.format(weight))
+    r = c.fetchall()
+    table_nm = 'ms1_lookup_results'
+    return inchi_sid_d_update(r, inchi_sid_d, table_nm)
+
 
 
 def add_to_row(results, name, row):
@@ -986,17 +1079,16 @@ def combine_annotations(conn, comp_conn, weights):
     insert_query_m(metab_rows, 'metab_compound', conn, columns=None,
                    db_type="sqlite", ignore_flag=True)
 
-    # for each pid - get the (best) results for each inchikey and annotations
+    # for each sid - get the (best) results for each inchikey and annotations
     # approach
     # make combined dict
     # get all inchikey_pid combinations from all approaches.
     # Then loop through and check each approach and make a row for each!
     inchi_sid_d = get_inchikey_sid_sirius(conn,
                                           weight=weights['sirius_csifingerid'])
-    inchi_sid_d = get_inchikey_sid(conn,
-                                   'ms1_lookup_results',
-                                   inchi_sid_d,
-                                   weight=weights['beams'])
+    inchi_sid_d = get_inchikey_sid_beams(conn,
+                                   weight=weights['beams'],
+                                   inchi_sid_d=inchi_sid_d)
     inchi_sid_d = get_inchikey_sid(conn,
                                    'metfrag_results',
                                    inchi_sid_d,
@@ -1013,6 +1105,8 @@ def combine_annotations(conn, comp_conn, weights):
     sid_d = {}
     for inchi_sid, results in inchi_sid_d.items():
         row = inchi_sid.split("_")
+        if row[0] == 'unknown' or row[1] == 'None':
+            continue
         sid = row[1]
         row, sirius_d = add_to_row(results, 'sirius_csifingerid_results', row)
         row, metfrag_d = add_to_row(results, 'metfrag_results', row)
@@ -1020,7 +1114,7 @@ def combine_annotations(conn, comp_conn, weights):
         row, sm_d = add_to_row(results, 'sm_matches', row)
 
         # Get biosim score
-        biosim_score = biosim_d[row[0]]
+        biosim_score = biosim_d[row[0]] if row[0] in biosim_d else 0
         biosim_wscore = biosim_score * 0.25
 
         # calculated weighted score
@@ -1035,11 +1129,11 @@ def combine_annotations(conn, comp_conn, weights):
                        str(beams_d['adduct']),
                        str(sm_d['adduct'])])
         adducts = [a for a in adducts if a]
-        adducts.remove('0')
+        if '0' in adducts:
+            adducts.remove('0')
         adduct_str = ",".join(adducts)
 
         row.extend([biosim_score, biosim_wscore, adduct_str, wscore])
-
         if sid in sid_d:
             sid_d[sid].append(row)
         else:
@@ -1071,19 +1165,39 @@ def combine_annotations(conn, comp_conn, weights):
                    db_type='sqlite', columns=columns)
 
 
-def pth2dict(dr):
-    return {os.path.splitext(os.path.basename(f))[0]:
-                os.path.join(dr, f) for f in os.listdir(dr)}
+def pths2dict(pths, galaxy):
+    pthl = pths.split(',')
+    pthl = [i.strip() for i in pthl]
+    pthl = [i for i in pthl if i]
+    d = {}
+
+    if galaxy:
+        # if galaxy was used we have the name within Galaxy and the identifier (which has the well number)
+        for c, i in enumerate(pthl):
+            if (c % 2) == 0:
+                # (odd number so it is the identifier)
+                well = os.path.splitext(os.path.basename(i))[0].split('_')[0]
+                d[well] = {'full_name': i}
+            else:
+                d[well]['pth'] = i
+    else:
+        for i in enumerate(pthl):
+            well = os.path.splitext(os.path.basename(i))[0].split('_')
+            d[well] = {'full_name': i, 'pth': i}
+    return d
 
 
-def process_all_fracs(dims_pl_dir,
-                      dimsn_tree_dir,
+
+def process_all_fracs(dims_pls,
+                      dimsn_trees,
                       lcms_sqlite_pth,
-                      comp_pth,
-                      beams_dir,
-                      metfrag_dir,
-                      sirius_dir,
-                      spectral_matching_dir,
+                      comp_db_pth,
+                      library_db_pth,
+                      beams,
+                      metfrag,
+                      sirius,
+                      spectral_matching,
+                      additional,
                       frac_times_pth,
                       time_tolerance,
                       ppm_lcms,
@@ -1091,57 +1205,70 @@ def process_all_fracs(dims_pl_dir,
                       weights,
                       ms1_lookup_source,
                       out_sqlite,
-                      out_csv):
+                      out_tsv,
+                      rank_limit,
+                      galaxy,
+                      ms1_lookup_keepAdducts,
+                      ms1_lookup_checkAdducts):
     # get file name in dims_pl_pth
-    dims_pl_pths = pth2dict(dims_pl_dir)
+    dims_pl_pths = pths2dict(dims_pls, galaxy)
 
     # get filenames in dimsn_tree_pth
-    dimsn_tree_pths = pth2dict(dimsn_tree_dir)
+    dimsn_tree_pths = pths2dict(dimsn_trees, galaxy)
 
     # Get BEAMS file paths
-    beams_pths = pth2dict(beams_dir)
+    beams_pths = pths2dict(beams, galaxy)
 
     # get sirius file
-    sirius_pths = pth2dict(sirius_dir)
+    sirius_pths = pths2dict(sirius, galaxy)
 
     # get metrag file paths
-    metfrag_pths = pth2dict(metfrag_dir)
+    metfrag_pths = pths2dict(metfrag, galaxy)
 
     # get spectral matching paths
-    spectral_matching_pths = pth2dict(spectral_matching_dir)
+    spectral_matching_pths = pths2dict(spectral_matching, galaxy)
+
+    # get additional peak information
+    additional_peak_info_pths = pths2dict(additional, galaxy)
 
     # Loop through files
     frac_spectra = {}
     for well in dims_pl_pths.keys():
         frac_spectra[well] = {}
-        frac_spectra[well]['dims_pl_pth'] = dims_pl_pths[well]
+        frac_spectra[well]['data_file'] = dims_pl_pths[well]['full_name']
+        frac_spectra[well]['dims_pl_pth'] = dims_pl_pths[well]['pth']
         if well in dimsn_tree_pths:
-            frac_spectra[well]['dimsn_tree_pth'] = dimsn_tree_pths[well]
+            frac_spectra[well]['dimsn_tree_pth'] = dimsn_tree_pths[well]['pth']
         else:
             frac_spectra[well]['dimsn_tree_pth'] = ''
 
         if well in beams_pths:
-            frac_spectra[well]['beams_pth'] = beams_pths[well]
+            frac_spectra[well]['beams_pth'] = beams_pths[well]['pth']
         else:
             frac_spectra[well]['beams_pth'] = ''
 
         if well in sirius_pths:
-            frac_spectra[well]['sirius_pth'] = sirius_pths[well]
+            frac_spectra[well]['sirius_pth'] = sirius_pths[well]['pth']
         else:
             frac_spectra[well]['sirius_pth'] = ''
 
         if well in metfrag_pths:
-            frac_spectra[well]['metfrag_pth'] = metfrag_pths[well]
+            frac_spectra[well]['metfrag_pth'] = metfrag_pths[well]['pth']
         else:
             frac_spectra[well]['metfrag_pth'] = ''
 
         if well in spectral_matching_pths:
             frac_spectra[well]['spectral_matching_pth'] = \
-                spectral_matching_pths[well]
+                spectral_matching_pths[well]['pth']
         else:
             frac_spectra[well]['spectral_matching_pth'] = ''
 
-    # os.remove('frac_exp.sqlite')
+        if well in additional_peak_info_pths:
+            frac_spectra[well]['additional_peak_info_pth'] = \
+                additional_peak_info_pths[well]['pth']
+        else:
+            frac_spectra[well]['additional_peak_info_pth'] = ''
+
     if os.path.exists(lcms_sqlite_pth):
         if out_sqlite:
             lcms_sqlite_pth = shutil.copy(lcms_sqlite_pth, out_sqlite)
@@ -1154,8 +1281,8 @@ def process_all_fracs(dims_pl_dir,
         else:
             conn, cur = create_db('frac_exp.sqlite')
 
-    comp_conn = sqlite3.connect(comp_pth)
-
+    # connect to compound database
+    comp_conn = sqlite3.connect(comp_db_pth)
     frac_times_d = {}
 
     with open(frac_times_pth, 'r') as ft:
@@ -1184,18 +1311,67 @@ def process_all_fracs(dims_pl_dir,
                                 metfrag_pth=spths['metfrag_pth'],
                                 spectral_matching_pth=spths[
                                     'spectral_matching_pth'],
+                                additional_peak_info_pth=spths[
+                                    'additional_peak_info_pth'],
                                 conn=conn,
                                 pid_d=pid_d,
                                 ms1_lookup_source=ms1_lookup_source,
-                                comp_conn=comp_conn
+                                comp_conn=comp_conn,
+                                well=well,
+                                ms1_lookup_keepAdducts=ms1_lookup_keepAdducts,
+                                ms1_lookup_checkAdducts=ms1_lookup_checkAdducts
                                 )
 
     # combine annotations
     combine_annotations(conn, comp_conn, weights)
 
+    # add any library spectra information (from spectral matching results
+    if os.path.exists(library_db_pth):
+        print(library_db_pth)
+        library_conn = sqlite3.connect(library_db_pth)
+        add_library_spectra(conn, library_conn)
+    else:
+        print('Spectral library path does not exist so can not add library spectra to database')
     # create summary table
     # Include both the LC-MS and DI-MS annotations
-    summarise_annotations(conn, 'test.tsv')
+    summarise_annotations(conn, out_tsv, rank_limit)
+
+def add_library_spectra(conn, library_conn):
+    print("Get all the library pids that do not have any relevant library spectra yet")
+    lpid_r = conn.execute("""SELECT lpid FROM sm_matches AS sm LEFT JOIN l_s_peak_meta AS lspm ON lspm.id=sm.lpid
+                                WHERE lspm.id IS NULL""")
+    lpids = [str(int(i[0])) for i in lpid_r.fetchall()]
+
+    lpids_str = ",".join(lpids)
+    print('Get the meta data from the library')
+    new_lsm_r = library_conn.execute("SELECT * FROM library_spectra_meta WHERE id IN ({})".format(lpids_str))
+    insert_query_m([i for i in new_lsm_r.fetchall()],
+                   'l_s_peak_meta',
+                   conn=conn,
+                   db_type='sqlite')
+
+    print('Get relevant library spectra')
+    new_ls_r = library_conn.execute("SELECT * FROM library_spectra WHERE library_spectra_meta_id IN ({})".format(
+        lpids_str))
+
+    insert_query_m([i for i in new_ls_r.fetchall()],
+                   'l_s_peaks',
+                   conn=conn,
+                   db_type='sqlite')
+
+    print('Get relevant library source information')
+    lcms_source_id_r = conn.execute("SELECT id FROM l_source")
+    lcms_source_ids = [str(int(i[0])) for i in lcms_source_id_r.fetchall()]
+    lcms_source_str = ",".join(lcms_source_ids)
+
+    new_source_r = library_conn.execute("SELECT * FROM library_spectra_source WHERE id NOT IN ({})".format(
+        lcms_source_str))
+
+    if new_source_r:
+        insert_query_m([i for i in new_source_r.fetchall()],
+                   'l_source',
+                   conn=conn,
+                   db_type='sqlite')
 
 
 def summarise_annotations(conn, out_file, rank_limit=100):
@@ -1208,11 +1384,13 @@ def summarise_annotations(conn, out_file, rank_limit=100):
        sp.sid,
        '' AS grpid,
        '' AS grp_name,
-       round(sp.mz, 6) AS mz,
+       round(sp.mz, 8) AS mz,
        round(sp.i, 2) AS i,
        round(spm.well_rt, 3) AS rt,
        round(spm.well_rtmin,3) AS rtmin,
        round(spm.well_rtmax,3) AS rtmax,
+       sp.adduct AS camera_adduct,
+       sp.isotopes AS camera_isotopes,
        GROUP_CONCAT(DISTINCT (CAST (cpgXsp.grpid AS INTEGER) ) ) AS lc_grpid_mtchs,
        '' AS dims_sid_mtchs,
        spm.well,  
@@ -1234,7 +1412,7 @@ def summarise_annotations(conn, out_file, rank_limit=100):
        mc.biosim_max_count,
        mc.biosim_hmdb_ids,
        '' AS fragmentation_acquistion_num,
-       '' AS mean_precursor_ion_purity,
+       round(sp.dims_predicted_precursor_ion_purity, 3) AS precursor_ion_purity,
        l.accession,
        l.id AS lpid,
        ca.sirius_score,
@@ -1280,11 +1458,14 @@ def summarise_annotations(conn, out_file, rank_limit=100):
        '' AS sid,
        cpg.grpid,
        cpg.grp_name,
-       round(cpg.mz, 6) AS mz,
+       round(cpg.mz, 8) AS mz,
        ROUND(AVG(cp._into),3) AS i,
        round(cpg.rt, 3) AS rt,
        round(cpg.rtmin,3) AS rtmin,
        round(cpg.rtmax,3) AS rtmax,
+       cpg.adduct AS camera_adduct,
+       cpg.isotopes AS camera_isotopes,
+
        '' AS lcms_grpid_mtchs,
        GROUP_CONCAT(DISTINCT (CAST (cpgXsp.sid AS INTEGER) ) ) AS dims_sid_mtchs,
        spm.well,  
@@ -1306,7 +1487,7 @@ def summarise_annotations(conn, out_file, rank_limit=100):
        mc.biosim_max_count,
        mc.biosim_hmdb_ids,
        GROUP_CONCAT(DISTINCT(cast(spm.acquisitionNum  as INTEGER) )) AS fragmentation_acquistion_num,
-       ROUND(AVG(spm.inPurity),3) AS mean_precursor_ion_purity,
+       ROUND(AVG(spm.inPurity),3) AS precursor_ion_purity,
        l.accession,
        l.id AS lpid,
        ca.sirius_score,
@@ -1373,29 +1554,26 @@ if __name__ == "__main__":
                                         'experiment',
                             formatter_class=ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('-d', '--dims_pl_dir',
-                        type=str, required=True,
-                        help="Path to the directory of dims peaklists (hdf5)")
-    parser.add_argument('-n', '--dimsn_tree_dir',
-                        type=str, required=True,
-                        help="Path to the directory of dimsn peaklists (hdf5)")
-    parser.add_argument('-l', '--lcms_sqlite_pth',
+    parser.add_argument('-l', '--lcms_sqlite',
                         type=str, required=True,
                         help="Path to the LC-MS sqlite results")
-    parser.add_argument('-c', '--comp_pth',
+    parser.add_argument('-d', '--dims_pls',
                         type=str, required=True,
-                        help="Path to the compound sqlite database")
-    parser.add_argument('-b', '--beams_dir',
+                        help="Path to the directory of dims peaklists (hdf5)")
+    parser.add_argument('-n', '--dimsn_trees',
+                        type=str, required=True,
+                        help="Path to the directory of dimsn peaklists (hdf5)")
+    parser.add_argument('-b', '--beams',
                         type=str, required=True,
                         help="Path to the directory of BEAMS results")
-    parser.add_argument('-m', '--metfrag_dir',
+    parser.add_argument('-m', '--metfrag',
                         type=str, required=True,
                         help="Path to the directory of MetFrag results")
-    parser.add_argument('-s', '--sirius_dir',
+    parser.add_argument('-s', '--sirius',
                         type=str, required=True,
                         help="Path to the directory of Sirius " \
                              "CSI:FingerID results")
-    parser.add_argument('-x', '--spectral_matching_dir',
+    parser.add_argument('-x', '--spectral_matching',
                         type=str, required=True,
                         help="Path to the directory of the spectral "
                              "matching results")
@@ -1432,18 +1610,55 @@ if __name__ == "__main__":
                         type=str, default='hmdb',
                         help="Database used for MS1 lookup source (e.g."
                              "hmdb, kegg or pubchem)")
-
     parser.add_argument('-o', '--out_sqlite',
                         type=str, required=False,
                         help="Database used for MS1 lookup source (e.g."
                              "hmdb, kegg or pubchem)")
-
-    parser.add_argument('-y', '--out_csv',
-                        type=str, default='lcfrac_results.csv',
+    parser.add_argument('-g', '--galaxy', action='store_true',
+                        help="Flag if running from Galaxy")
+    parser.add_argument('-y', '--out_tsv',
+                        type=str, default='lcfrac_results.tsv',
                         help="Database used for MS1 lookup source (e.g."
                              "hmdb, kegg or pubchem)")
+    parser.add_argument('-r', '--rank_limit',
+                        default=100,
+                        help="Limit the number of annotation by rankshown in "
+                             "the summary tsv file")
+    parser.add_argument('-a', '--additional',
+                        default=100,
+                        help="Additional information for each peak (e.g. precursor ion purity)")
+    parser.add_argument('--ms1_lookup_keepAdducts',
+                        default='',
+                        help="Provide a list of adducts that should be used from the MS1 lookup (e.g. [M+H]+, [M+Na]+)")
+    parser.add_argument('--ms1_lookup_checkAdducts', action='store_true',
+                        help="""Check if adducts match to those found in CAMERA (adducts to be present in the additional
+                     peak information file)""")
+    parser.add_argument('--comp_db_pth', default="",
+                        type=str, required=False,
+                        help="Path to the compound sqlite database")
+    parser.add_argument('--library_db_pth', default="",
+                        type=str, required=False,
+                        help="Path to the spectral library sqlite database")
 
     args = parser.parse_args()
+    config = configparser.ConfigParser()
+    config.read(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.ini'))
+
+    if args.comp_db_pth:
+        comp_db_pth = args.comp_db_pth
+    else:
+        comp_db_pth = config['db']['comp_db_pth']
+
+    if args.library_db_pth:
+        library_db_pth = args.library_db_pth
+    else:
+        library_db_pth = config['db']['library_db_pth']
+
+    print(comp_db_pth)
+
+    ms1_lookup_keepAdducts = args.ms1_lookup_keepAdducts.replace('__cb__', ']')
+    ms1_lookup_keepAdducts = ms1_lookup_keepAdducts.replace('__ob__', '[')
 
     weights = {'sirius_csifingerid': args.weight_sirius_csifingerid,
                'metfrag': args.weight_metfrag,
@@ -1451,14 +1666,16 @@ if __name__ == "__main__":
                'spectral_matching': args.weight_spectral_matching,
                'beams': args.weight_beams}
 
-    process_all_fracs(args.dims_pl_dir,
-                      args.dimsn_tree_dir,
-                      args.lcms_sqlite_pth,
-                      args.comp_pth,
-                      args.beams_dir,
-                      args.metfrag_dir,
-                      args.sirius_dir,
-                      args.spectral_matching_dir,
+    process_all_fracs(args.dims_pls,
+                      args.dimsn_trees,
+                      args.lcms_sqlite,
+                      comp_db_pth,
+                      library_db_pth,
+                      args.beams,
+                      args.metfrag,
+                      args.sirius,
+                      args.spectral_matching,
+                      args.additional,
                       args.frac_times_pth,
                       args.time_tolerance,
                       args.ppm_lcms,
@@ -1466,4 +1683,8 @@ if __name__ == "__main__":
                       weights,
                       args.ms1_lookup_source,
                       args.out_sqlite,
-                      args.out_csv)
+                      args.out_tsv,
+                      args.rank_limit,
+                      args.galaxy,
+                      ms1_lookup_keepAdducts,
+                      args.ms1_lookup_checkAdducts)
