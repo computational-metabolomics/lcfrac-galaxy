@@ -1,3 +1,0 @@
-msnpy_convert_id	mid	lpid	qpid	dpc	rdpc	cdpc	mcount	allcount	mpercent	library_rt	query_rt	rtdiff	library_precursor_mz	query_precursor_mz	library_precursor_ion_purity	query_precursor_ion_purity	library_accession	library_precursor_type	library_entry_name	inchikey	library_source_name	library_compound_name
-1	1	5325	1666	0.87867085623127	0.995376959873254	0.857041309938375	2	23	0.0869565217391304		47.73467061345971		116.07	116.07059763107115		1	CCMSLIB00000577898	M+H	L-PROLINE	ONIBWKKTOPOVIA-UHFFFAOYSA-N	gnps	L-PROLINE
-1	2	53807	1670	0.940890528192141	1	0.896086217325849	1	20	0.05		73.554846736017		132.10191	132.10182751761198		1	CE000616	[M+H]+	Isoleucine	AGPKZVBTJJNPAG-UHFFFAOYSA-N	massbank	L-ISOLEUCINE
