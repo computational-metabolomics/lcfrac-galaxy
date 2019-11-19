@@ -1131,6 +1131,7 @@ def combine_annotations(conn, comp_conn, weights):
         adducts = [a for a in adducts if a]
         if '0' in adducts:
             adducts.remove('0')
+            adducts.sort()
         adduct_str = ",".join(adducts)
 
         row.extend([biosim_score, biosim_wscore, adduct_str, wscore])

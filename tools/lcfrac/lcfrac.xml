@@ -211,7 +211,7 @@
             <param name="library_db_type" value="local_config"/>
             <param name="comp_db" value="metab_compound_subset.sqlite"/>
             <output name="summary_results_tsv" value="summary_results.tsv"/>
-            <output name="summary_results_sqlite" value="summary_results.sqlite"/>
+<!--            <output name="summary_results_sqlite" value="summary_results.sqlite"/>-->
         </test>
     </tests>
     <help>
