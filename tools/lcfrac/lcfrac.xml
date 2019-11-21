@@ -14,7 +14,7 @@
     <command detect_errors="exit_code">
     <![CDATA[
 
-       python '$__tool_directory__/lcfrac.py'
+       python '$__tool_directory__/lcfrac/lcfrac/__main__.py'
                    --lcms_sqlite '$lcms_sqlite'
                    --dims_pls='
                         #for $i in $dims_pls
@@ -51,7 +51,7 @@
                             $i.element_identifier,$i,
                         #end for
                    '
-                   --frac_times_pth '$__tool_directory__/frac_times.csv'
+                   --frac_times_pth '$__tool_directory__/lcfrac/lcfrac/frac_times.csv'
                    --ppm_lcms 5
                    --ppm_dims 5
                    --time_tolerance 0
