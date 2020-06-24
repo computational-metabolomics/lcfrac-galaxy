@@ -30,7 +30,7 @@ if __name__ == "__main__":
                         help="Path to the directory of dims peaklists (hdf5)")
     parser.add_argument('-n', '--dimsn_trees',
                         type=str, required=True,
-                        help="Path to the directory of dimsn peaklists (hdf5)")
+                        help="Path to the directory of dimsn trees")
     parser.add_argument('-b', '--beams',
                         type=str, required=True,
                         help="Path to the directory of BEAMS results")

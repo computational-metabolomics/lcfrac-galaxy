@@ -207,13 +207,14 @@ def process_frac_spectra(tree_pth,
                          frac_times_d,
                          time_tolerance,
                          ppm_lcms,
-                         ppm_dims):
+                         ppm_dims,
+                         adjust_mz=False):
     print("PROCESSING SPECTRA FRACTION {}".format(well))
     print(tree_pth)
     print(dims_pm_pth)
     dimsn_non_merged_pls, \
     dimsn_merged_pls, \
-    dimsn_precursors_pl = tree2peaklist(tree_pth, adjust_mz=False)
+    dimsn_precursors_pl = tree2peaklist(tree_pth, adjust_mz=adjust_mz)
 
     dims_pm = load_peak_matrix_from_hdf5(dims_pm_pth, compatibility_mode=False)
 
