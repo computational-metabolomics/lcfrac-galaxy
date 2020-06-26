@@ -1,4 +1,4 @@
-<tool id="lcfrac" name="LC-MS/MS fractionation processor - " version="0.0.7">
+<tool id="lcfrac" name="LC-MS/MS fractionation processor - " version="0.0.11">
     <description>
         Combine and process spectra and annotation results from an LC-MS(/MS) fractionation experiment
     </description>
@@ -46,17 +46,17 @@
                             $i.element_identifier,$i,
                         #end for
                    '
-                   --additional='
-                        #for $i in $additional
+                   --additional_info='
+                        #for $i in $additional_info
                             $i.element_identifier,$i,
                         #end for
                    '
                    --frac_times_pth '$__tool_directory__/lcfrac/lcfrac/frac_times.csv'
-                   --ppm_lcms 5
-                   --ppm_dims 5
-                   --time_tolerance 0
-                   --out_sqlite '$summary_results_sqlite'
-                   --out_tsv '$summary_results_tsv'
+                   --lcms_ppm $lcms_ppm
+                   --dims_ppm $dims_ppm
+                   --time_tolerance $time_tolerance
+                   --rank_limit $rank_limit
+                   --sirius_rank_limit $sirius_rank_limit
                    --galaxy
 
                    $ms1_lookup_checkAdducts
@@ -70,6 +70,8 @@
                         --library_db_pth=$library_db_cond.library_db
                    #end if
 
+                   --out_sqlite '$summary_results_sqlite'
+                   --out_tsv '$summary_results_tsv'
 
 
     ]]></command>
@@ -80,8 +82,6 @@
                label="DIMS peaklist for fractions"/>
         <param argument="--dimsn_trees" type="data_collection" format="json" multiple="true"
                label="MSnPy DIMSn (MS/MS) spectral trees"/>
-<!--   keep compound, library path and fraction times, 'hard coded' for now - no one else will use this tool outside
- of Brum for now!-->
         <param argument="--beams" type="data_collection" format="tsv,tabular" multiple="true"
                label="BEAMS MS1 annotation results for DIMS"/>
         <param argument="--metfrag" type="data_collection" format="tsv,tabular" multiple="true"
@@ -90,13 +90,13 @@
                label="SIRIUS CSI:FingerID results for DIMSn"/>
         <param argument="--spectral_matching" type="data_collection" format="tsv,tabular" multiple="true"
                label="Spectral matching results for DIMSn"/>
-        <param argument="--additional" type="data_collection" format="tsv,tabular" multiple="true"
+        <param argument="--additional_info" type="data_collection" format="tsv,tabular" multiple="true"
                label="Additional details"
                help="A peak table with additional columns to include in the database (e.g. isotope, adducts, precursor
                       ion purity"/>
-        <param argument="--ppm_lcms" type="float" value="5"
+        <param argument="--lcms_ppm" type="float" value="5"
                label="PPM error for LC-MS measurements"/>
-        <param argument="--ppm_dims" type="float" value="5"
+        <param argument="--dims_ppm" type="float" value="5"
                label="PPM error for DI-MS measurements"/>
         <param argument="--time_tolerance" type="float" value="10"
                label="Tolerance in seconds to map DIMS to LC-MS"/>
@@ -127,6 +127,10 @@
                truevalue="--ms1_lookup_checkAdducts" falsevalue=""
                help="Check if adducts match to those found in CAMERA (adducts to be present in the additional
                      peak information file)"/>
+        <param argument="--sirius_rank_limit" type="integer" value="25" label="Limit for sirius annotations by rank"
+               help="Limit the number of annotations from SIRIUS CSI:FingerID "/>
+        <param argument="--rank_limit" type="integer" value="0" label="Limit for annotations by rank"
+               help="Only applies to the summary tsv table (leave as zero to include all annotations)"/>
 
         <conditional name="comp_db_cond">
             <param name="comp_db_type" type="select" label="Compound database"
@@ -174,7 +178,8 @@
             <param name="dimsn_trees" >
                 <collection type="list">
                     <element name="A01" value="dimsn_trees/A01.json"/>
-                    <element name="A02" value="dimsn_trees/A02.json"/>
+                    <element name="A02_1" value="dimsn_trees/A02_1.json"/>
+                    <element name="A02_2" value="dimsn_trees/A02_2.json"/>
                 </collection>
             </param>
             <param name="beams" >
@@ -186,22 +191,23 @@
             <param name="metfrag" >
                 <collection type="list">
                     <element name="A01" value="metfrag/A01.tabular"/>
-                    <element name="A02" value="metfrag/A02.tabular"/>
+                    <element name="A02_1" value="metfrag/A02_1.tabular"/>
                 </collection>
             </param>
             <param name="sirius" >
                 <collection type="list">
                     <element name="A01" value="sirius/A01.tsv"/>
-                    <element name="A02" value="sirius/A02.tsv"/>
+                    <element name="A02_1" value="sirius/A02_1.tsv"/>
+                    <element name="A02_2" value="sirius/A02_2.tsv"/>
                 </collection>
             </param>
             <param name="spectral_matching" >
                 <collection type="list">
                     <element name="A01" value="spectral_matching/A01.tsv"/>
-                    <element name="A02" value="spectral_matching/A02.tsv"/>
+                    <element name="A02_1" value="spectral_matching/A02_1.tsv"/>
                 </collection>
             </param>
-            <param name="additional" >
+            <param name="additional_info" >
                 <collection type="list">
                     <element name="A01" value="additional/A01.tsv"/>
                     <element name="A02" value="additional/A02.tsv"/>
@@ -210,8 +216,9 @@
             <param name="lcms_sqlite" value="lcmsms.sqlite"/>
             <param name="library_db_type" value="local_config"/>
             <param name="comp_db" value="metab_compound_subset.sqlite"/>
+            <param name="library_db" value=""/>
             <output name="summary_results_tsv" value="summary_results.tsv"/>
-            <output name="summary_results_sqlite" value="summary_results.sqlite"/>
+<!--            <output name="summary_results_sqlite" value="summary_results.sqlite"/>-->
         </test>
     </tests>
     <help>

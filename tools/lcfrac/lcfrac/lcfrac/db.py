@@ -1,9 +1,8 @@
 import sqlite3
 
-def update_db(file_pth):
+def update_lcms_db(conn):
     """
     """
-    conn = sqlite3.connect(file_pth)
     c = conn.cursor()
     # this means that we are missing the dims specific columns
     c.execute('ALTER TABLE s_peak_meta ADD msnpy_convert_id integer')
