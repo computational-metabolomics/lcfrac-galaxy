@@ -5,6 +5,33 @@ from scipy.stats import rankdata
 from operator import itemgetter
 from db import max_row, insert_query_m
 
+def process_ms1_annotation(wellinfo, lcms_conn, comp_conn, ms1_lookup_source, ms1_lookup_keepAdducts,
+                           ms1_lookup_checkAdducts):
+
+    # write additional peak info (camera isotope/adduct annotations and precursor ion purity)
+    add_additional_peak_info(wellinfo.dims_pths.additional_info, lcms_conn, wellinfo.well_number)
+
+    # write beams to sqlite database
+    add_beams(wellinfo.dims_pths.beams, lcms_conn, comp_conn, ms1_lookup_keepAdducts, ms1_lookup_checkAdducts,
+              ms1_lookup_source,
+              wellinfo.well_number)
+
+
+def process_frag_annotation(msn_pths, lcms_conn, pid_d, sirius_rank_limit):
+
+    # write sirius to sqlite database
+    if msn_pths.sirius:
+        add_sirius(msn_pths.sirius, lcms_conn, pid_d, sirius_rank_limit)
+
+    # write metfrag to sqlite database
+    if msn_pths.metfrag:
+        add_metfrag(msn_pths.metfrag, lcms_conn, pid_d)
+
+    # write spectral matching to sqlite database
+    if msn_pths.spectral_matching:
+        add_spectral_matching(msn_pths.spectral_matching, lcms_conn, pid_d)
+
+
 def add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts,  ms1_lookup_checkAdducts, ms1_lookup_source, well):
     '''
     '''
@@ -26,9 +53,9 @@ def add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts,  ms1_lookup_ch
                     WHERE spm.name = 'original_aligned_peaklist' AND spm.well='{}'
             """.format(well)
     cursor = conn.cursor()
-    mz_d = {round(float(i[0]), 8): {'sid': int(i[1]),
-                                    'adduct': i[2],
-                                    'isotopes': i[3]} for i in cursor.execute(select)}
+    r = cursor.execute(select)
+    peaks_to_align = r.fetchall()
+    mz_d = {round(float(i[0]), 8): {'sid': int(i[1]), 'adduct': i[2],'isotopes': i[3]} for i in peaks_to_align}
 
 
     c = max_row(conn, 'ms1_lookup_results', 'id')
@@ -253,7 +280,7 @@ def parse_name(name, pid_d):
     return {'h':header, 'msnpy_convert_id':msnpy_convert_id, 'pid':pid}
 
 
-def add_sirius(sirius_pth, conn, pid_d):
+def add_sirius(sirius_pth, conn, pid_d, rank_limit=25):
     '''
     '''
 
@@ -269,6 +296,9 @@ def add_sirius(sirius_pth, conn, pid_d):
             else:
                 pid = pn['pid']
                 msnpy_convert_id = pn['msnpy_convert_id']
+
+            if rank_limit != 0 and int(drow['rank']) > rank_limit:
+                continue
 
             rows.append((c,
                          pid,
@@ -315,33 +345,7 @@ def add_sirius(sirius_pth, conn, pid_d):
                    db_type='sqlite')
 
 
-def process_frac_annotation(beams_pth,
-                            sirius_pth,
-                            metfrag_pth,
-                            spectral_matching_pth,
-                            additional_peak_info_pth,
-                            conn,
-                            pid_d,
-                            ms1_lookup_source,
-                            comp_conn,
-                            well,
-                            ms1_lookup_keepAdducts,
-                            ms1_lookup_checkAdducts):
 
-    # write additional peak info (camera isotope/adduct annotations and precursor ion purity)
-    add_additional_peak_info(additional_peak_info_pth, conn, well)
-
-    # write beams to sqlite database
-    add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts, ms1_lookup_checkAdducts, ms1_lookup_source, well)
-
-    # write sirius to sqlite database
-    add_sirius(sirius_pth, conn, pid_d)
-
-    # write metfrag to sqlite database
-    add_metfrag(metfrag_pth, conn, pid_d)
-
-    # write spectral matching to sqlite database
-    add_spectral_matching(spectral_matching_pth, conn, pid_d)
 
 
 def col_multiple_check(r, cols):
@@ -479,6 +483,10 @@ def combine_annotations(conn, comp_conn, weights):
     # remove duplicates
     inchikeys = list(set(inchikeys))
 
+    # Remove inchikeys we have already
+    old_inchikeys = sql_simple_select(conn, 'metab_compound', 'inchikey')
+    inchikeys = [i for i in inchikeys if i not in old_inchikeys]
+
     # add to metab_compound in conn
     metab_rows = get_metab_compound_rows(comp_conn, inchikeys, 'inchikey',
                                          '*')
@@ -560,7 +568,7 @@ def combine_annotations(conn, comp_conn, weights):
         # Get all scores
         scores = [r[len(r) - 1] for r in rows]
 
-        ranks = (len(scores) - rankdata(scores, 'dense')) + 1
+        ranks = rankdata(np.array(scores), 'dense')
 
         for i in range(0, len(ranks)):
             rows[i].append(int(ranks[i]))
@@ -649,13 +657,15 @@ def summarise_annotations(conn, out_file, rank_limit=100):
        LEFT JOIN
        c_peak_groups_X_s_peaks AS cpgXsp ON cpgXsp.sid = sp.sid
 
-    WHERE (sp.sid IS NOT NULL) AND (IFNULL(ca.rank<={}, 1)) AND  (
-    spm.spectrum_type IS 'dimspy0')
+    WHERE (sp.sid IS NOT NULL) AND  (
+    spm.spectrum_type IS 'dimspy') AND (0=={} OR IFNULL(ca.rank<={}, 1))
     GROUP BY sp.sid,
              IFNULL(ca.inchikey, sp.sid)
-    ORDER BY sp.sid,
-             IFNULL(ca.rank, sp.sid)
-    """.format(rank_limit)
+    ORDER BY spm.well,
+             sp.mz,
+             IFNULL(ca.rank, sp.mz)
+             
+    """.format(rank_limit,rank_limit)
 
     r = c.execute(sql_stmt)
     dims_annotations = r.fetchall()
@@ -732,14 +742,15 @@ def summarise_annotations(conn, out_file, rank_limit=100):
     LEFT JOIN
     fileinfo AS fi ON fi.fileid = spm.fileid
 
-    WHERE IFNULL(ca.rank<={}, 1) AND fi.class NOT LIKE '%blank%'
+    WHERE (cpg.grpid IS NOT NULL) AND IFNULL((fi.class NOT LIKE '%blank%'), 1)
+        AND (0=={} OR IFNULL(ca.rank<={}, 1))
     GROUP BY
      cpg.grpid,
      IFNULL(ca.inchikey, cpg.grpid)
     ORDER BY 
      cpg.grpid, 
      IFNULL(ca.rank, cpg.grpid)
-    """.format(rank_limit)
+    """.format(rank_limit, rank_limit)
 
     r = c.execute(sql_stmt)
     lcms_annotations = r.fetchall()

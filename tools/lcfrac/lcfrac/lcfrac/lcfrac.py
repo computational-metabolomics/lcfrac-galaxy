@@ -12,200 +12,292 @@ import csv
 from scipy.stats import rankdata
 from operator import itemgetter
 
+from db import update_lcms_db
+from spectra import process_ms1_spectra, process_frag_spectra, add_library_spectra
+from annotation import process_ms1_annotation, process_frag_annotation, combine_annotations, summarise_annotations
+from collections import defaultdict
 
-from db import update_db
-from spectra import process_frac_spectra
-from annotation import process_frac_annotation, combine_annotations, summarise_annotations
 
-def pths2dict(pths, galaxy):
-    pthl = pths.split(',')
-    pthl = [i.strip() for i in pthl]
-    pthl = [i for i in pthl if i]
-    d = {}
+class LcFracExp(object):
+    """Class to handle LC-MS/MS fractionation spectra and annotations
+    """
+    def __init__(self,
+                 time_tolerance=10,
+                 dims_ppm=5,
+                 lcms_ppm=5,
+                 rank_limit=0,
+                 ms1_lookup_source="hmdb",
+                 ms1_lookup_keepAdducts="[M+H]+",
+                 ms1_lookup_checkAdducts=True,
+                 weights={'sirius_csifingerid': 0.2,
+                          'metfrag': 0.2,
+                          'biosim': 0.25,
+                          'spectral_matching': 0.3,
+                          'beams': 0.05},
+                galaxy = False,
+                lcms_db_pth='',
+                metab_compound_db_pth='',
+                library_spectra_db_pth='',
+                frac_times_pth='',
+                sirius_rank_limit=25
+                 ):
+        self.wells = {}
+        self.lcms_db_pth = lcms_db_pth
+        self.metab_compound_db_pth = metab_compound_db_pth
+        self.library_spectra_db_pth = library_spectra_db_pth
+        self.galaxy = galaxy
+        self.time_tolerance = time_tolerance
+        self.dims_ppm = dims_ppm
+        self.lcms_ppm = lcms_ppm
+        self.rank_limit = rank_limit
+        self.ms1_lookup_source = ms1_lookup_source
+        self.ms1_lookup_keepAdducts = ms1_lookup_keepAdducts
+        self.ms1_lookup_checkAdducts = ms1_lookup_checkAdducts
+        self.weights = weights
+        self.sirius_rank_limit = sirius_rank_limit
 
-    if galaxy:
-        # if galaxy was used we have the name within Galaxy and the identifier (which has the well number)
-        for c, i in enumerate(pthl):
-            print(c, i, c % 2)
-            if (c % 2) == 0:
-                bn = os.path.basename(i)
-                fileid = os.path.splitext(bn)[0]
-                well = os.path.splitext(bn)[0].split('_')[0]
+        if frac_times_pth:
+            self.frac_times_pth = frac_times_pth
+        else:
+            self.frac_times_pth = 'frac_times.csv'
+        # create multiple well objects for the LC fractionation experiment
+        self.init_wells()
 
-                if well in d:
-                    d[well]['full_name'] = i
+    def init_wells(self):
+        with open(self.frac_times_pth, 'r') as ft:
+            dr = csv.DictReader(ft)
+            for row in dr:
+                rtmin = float(row['frac_start_minutes'])
+                rtmax = float(row['frac_end_minutes'])
+                self.wells[row['well']] = WellInfo(well_number=row['well'],
+                                                   frac_number=int(row['frac_num']),
+                                                   rtmin=rtmin,
+                                                   rtmax=rtmax)
+
+    def connect2dbs(self):
+        if self.lcms_db_pth:
+            print('connecting to lcms sqlite database')
+            self.lcms_conn = sqlite3.connect(self.lcms_db_pth)
+        if self.metab_compound_db_pth:
+            print('connecting to metab compound sqlite database')
+            self.comp_conn = sqlite3.connect(self.metab_compound_db_pth)
+        if self.library_spectra_db_pth:
+            print('connecting to library spectra sqlite database')
+            self.library_conn = sqlite3.connect(self.library_spectra_db_pth)
+
+
+    def update_lcms_db(self):
+        update_lcms_db(self.lcms_conn)
+
+
+    def pths2wells(self, pths, dims_msn, tech):
+        pthl = pths.split(',')
+        pthl = [i.strip() for i in pthl]
+        pthl = [i.strip('\n') for i in pthl if i]
+
+        if self.galaxy:
+            # if galaxy was used we have the name within Galaxy and the identifier (which has the well number)
+            for c, i in enumerate(pthl):
+                #print(c, i, c % 2)
+                if (c % 2) == 0:
+                    bn = os.path.basename(i)
+                    element = os.path.splitext(bn)[0]
+                    well = os.path.splitext(bn)[0].split('_')[0]
+                    if well in self.wells:
+                        if dims_msn == 'dims':
+                            if not self.wells[well].dims_pths.element:
+                                setattr(self.wells[well].dims_pths, 'element', element)
+                            elif self.wells[well].dims_pths.element != element:
+                                print('Element identifiers for DIMS data do not match')
+                        elif dims_msn == 'msn':
+                            if not self.wells[well].msn_pths_c[element]:
+                                self.wells[well].msn_pths_c[element] = MsnPths(element=element)
                 else:
-                    d[well] = {'full_name': i}
-            else:
-                d[well]['pth'] = i
+                    if well in self.wells:
 
-    else:
-        for i in enumerate(pthl):
-            well = os.path.splitext(os.path.basename(i))[0].split('_')
-            if well in d:
-                d[well]['full_name'] = i
-                d[well]['pth'] = i
-            else:
-                d[well] = {'full_name': i, 'pth': i}
-    return d
-
-
-
-def extract_pth(spths, tech, dimsn_name):
-    return spths[tech]['pth'][spths[tech]['full_name'] == dimsn_name]
-
-
-def process_all_fracs(dims_pls,
-                      dimsn_trees,
-                      lcms_sqlite_pth,
-                      comp_db_pth,
-                      library_db_pth,
-                      beams,
-                      metfrag,
-                      sirius,
-                      spectral_matching,
-                      additional,
-                      frac_times_pth,
-                      time_tolerance,
-                      ppm_lcms,
-                      ppm_dims,
-                      weights,
-                      ms1_lookup_source,
-                      out_sqlite,
-                      out_tsv,
-                      rank_limit,
-                      galaxy,
-                      ms1_lookup_keepAdducts,
-                      ms1_lookup_checkAdducts):
-    # get file name in dims_pl_pth
-    dims_pl_pths = pths2dict(dims_pls, galaxy)
-
-    # get filenames in dimsn_tree_pth
-    dimsn_tree_pths = pths2dict(dimsn_trees, galaxy)
-
-    # Get BEAMS file paths
-    beams_pths = pths2dict(beams, galaxy)
-
-    # get sirius file
-    sirius_pths = pths2dict(sirius, galaxy)
-
-    # get metrag file paths
-    metfrag_pths = pths2dict(metfrag, galaxy)
-
-    # get spectral matching paths
-    spectral_matching_pths = pths2dict(spectral_matching, galaxy)
-
-    # get additional peak information
-    additional_peak_info_pths = pths2dict(additional, galaxy)
-
-    # Loop through files
-    frac_spectra = {}
-    for well in dims_pl_pths.keys():
-        frac_spectra[well] = {}
-        frac_spectra[well]['dims_data_file'] = dims_pl_pths[well]['full_name']
-        frac_spectra[well]['dims_pl_pth'] = dims_pl_pths[well]['pth']
-        if well in dimsn_tree_pths:
-            frac_spectra[well]['dimsn_tree_pth'] = dimsn_tree_pths[well]['pth']
+                        if dims_msn == 'dims':
+                            setattr(self.wells[well].dims_pths, tech, i)
+                        elif dims_msn == 'msn':
+                            setattr(self.wells[well].msn_pths_c[element], tech, i)
+                        setattr(self.wells[well], 'data_assigned', True)
         else:
-            frac_spectra[well]['dimsn_tree_pth'] = ''
+            for i in enumerate(pthl):
+                well = os.path.splitext(os.path.basename(i))[0].split('_')
+                if well in self.wells:
+                    if dims_msn == 'dims':
+                        setattr(self.wells[well].dims_pths, 'element', i)
+                        setattr(self.wells[well].dims_pths, tech, i)
+                    elif dims_msn == 'msn':
+                        setattr(self.wells[well].msn_pths_c[element], tech, i)
+                    setattr(self.wells[well], 'data_assigned', True)
 
-        if well in beams_pths:
-            frac_spectra[well]['beams_pth'] = beams_pths[well]['pth']
+    def assign_data_pths_to_wells(self,
+                                  dims_pls_pths,
+                                  dimsn_tree_pths,
+                                  spectral_matching_pths,
+                                  metfrag_pths,
+                                  sirius_pths,
+                                  beams_pths,
+                                  additional_info_pths
+                                  ):
+        # Get MS1 level information
+        self.pths2wells(dims_pls_pths, 'dims', 'spectra')
+        self.pths2wells(dimsn_tree_pths, 'msn', 'spectra')
+        self.pths2wells(beams_pths, 'dims', 'beams')
+        self.pths2wells(additional_info_pths, 'dims', 'additional_info')
+        self.pths2wells(spectral_matching_pths, 'msn', 'spectral_matching')
+        self.pths2wells(metfrag_pths, 'msn', 'metfrag')
+        self.pths2wells(sirius_pths, 'msn', 'sirius')
+
+    def add_well_to_db(self, wellinfo):
+        print(wellinfo.well_number)
+        orig_dims_d, orig_dims_pid = process_ms1_spectra(wellinfo, self.lcms_conn)
+        process_ms1_annotation(wellinfo,
+                               self.lcms_conn,
+                               self.comp_conn,
+                               self.ms1_lookup_source,
+                               self.ms1_lookup_keepAdducts,
+                               self.ms1_lookup_checkAdducts)
+
+        for element_i, msn_pths in wellinfo.msn_pths_c.items():
+            print(element_i)
+            pid_d = process_frag_spectra(wellinfo,
+                                 element_i,
+                                 self.lcms_conn,
+                                 self.time_tolerance,
+                                 self.lcms_ppm,
+                                 self.dims_ppm,
+                                 orig_dims_d,
+                                 orig_dims_pid)
+
+            # find relevant sirius, metfrag and spectral matching for the dimsn file
+            process_frag_annotation(msn_pths,
+                                    lcms_conn=self.lcms_conn,
+                                    pid_d=pid_d,
+                                    sirius_rank_limit=self.sirius_rank_limit)
+
+    def add_wells_to_db(self):
+        for wellid, wellinfo in self.wells.items():
+            if wellinfo.data_assigned:
+                self.add_well_to_db(wellinfo)
+
+    def combine_annotations(self):
+        combine_annotations(self.lcms_conn, self.comp_conn, self.weights)
+
+    def add_library_spectra(self):
+        if self.library_spectra_db_pth:
+            add_library_spectra(self.lcms_conn, self.library_conn)
         else:
-            frac_spectra[well]['beams_pth'] = ''
+            print('Library spectra database path needs to be defined')
 
-        if well in sirius_pths:
-            frac_spectra[well]['sirius_pth'] = sirius_pths[well]['pth']
-        else:
-            frac_spectra[well]['sirius_pth'] = ''
-
-        if well in metfrag_pths:
-            frac_spectra[well]['metfrag_pth'] = metfrag_pths[well]['pth']
-        else:
-            frac_spectra[well]['metfrag_pth'] = ''
-
-        if well in spectral_matching_pths:
-            frac_spectra[well]['spectral_matching_pth'] = \
-                spectral_matching_pths[well]['pth']
-        else:
-            frac_spectra[well]['spectral_matching_pth'] = ''
-
-        if well in additional_peak_info_pths:
-            frac_spectra[well]['additional_peak_info_pth'] = \
-                additional_peak_info_pths[well]['pth']
-        else:
-            frac_spectra[well]['additional_peak_info_pth'] = ''
-
-    if os.path.exists(lcms_sqlite_pth):
-        if out_sqlite:
-            lcms_sqlite_pth = shutil.copy(lcms_sqlite_pth, out_sqlite)
-        conn, cur = update_db(lcms_sqlite_pth)
-    else:
-        if out_sqlite:
-            # conn, cur = create_db(out_sqlite)
-            print("Requires LC-MS(/MS) sqlite database")
-            exit()
-        else:
-            conn, cur = create_db('frac_exp.sqlite')
-
-    # connect to compound database
-    comp_conn = sqlite3.connect(comp_db_pth)
-    frac_times_d = {}
-
-    with open(frac_times_pth, 'r') as ft:
-        dr = csv.DictReader(ft)
-        for row in dr:
-            frac_times_d[row['well']] = {'frac_num': int(row['frac_num']),
-                                         'frac_start_minutes':
-                                             float(row['frac_start_minutes']),
-                                         'frac_end_minutes':
-                                             float(row['frac_end_minutes']),
-                                         }
-
-    for well, spths in frac_spectra.items():
-
-        pid_d = process_frac_spectra(spths['dimsn_tree_pth'],
-                                     spths['dims_pl_pth'],
-                                     well,
-                                     conn,
-                                     frac_times_d,
-                                     time_tolerance,
-                                     ppm_lcms,
-                                     ppm_dims
-                                     )
-
-        # find relevant sirius, metfrag and spectral matching for the dimsn file
-        process_frac_annotation(beams_pth=spths['beams_pth'],
-                                sirius_pth=spths['sirius_pth'],
-                                metfrag_pth=spths['metfrag_pth'],
-                                spectral_matching_pth=spths['spectral_matching_pth'],
-                                additional_peak_info_pth=spths[
-                                    'additional_peak_info_pth'],
-                                conn=conn,
-                                pid_d=pid_d,
-                                ms1_lookup_source=ms1_lookup_source,
-                                comp_conn=comp_conn,
-                                well=well,
-                                ms1_lookup_keepAdducts=ms1_lookup_keepAdducts,
-                                ms1_lookup_checkAdducts=ms1_lookup_checkAdducts
-                                )
-
-        # process the MS1 annotation separately (as only 1 DIMS file)
+    def summarise_annotation(self, out_tsv_pth):
+        # create summary table
+        # Include both the LC-MS and DI-MS annotations
+        summarise_annotations(self.lcms_conn, out_tsv_pth, self.rank_limit)
 
 
-    # combine annotations
-    combine_annotations(conn, comp_conn, weights)
-
-    # add any library spectra information (from spectral matching results
-    if os.path.exists(library_db_pth):
-        library_conn = sqlite3.connect(library_db_pth)
-        add_library_spectra(conn, library_conn)
-    else:
-        print('Spectral library path does not exist so can not add library spectra to database')
-    # create summary table
-    # Include both the LC-MS and DI-MS annotations
-    summarise_annotations(conn, out_tsv, rank_limit)
-
-
+class WellInfo(object):
+    """Class to handle LC-MS/MS wells of LcFrac object
+    """
+    def __init__(self, well_number, frac_number, rtmin, rtmax):
+        self.well_number = well_number
+        self.frac_number = frac_number
+        self.rt = np.mean([rtmin, rtmax]),
+        self.rtmin = rtmin
+        self.rtmax = rtmax
+        self.dims_pths = DimsPths()
+        self.msn_pths_c = defaultdict(str)
+        self.data_assigned = False
 
 
+class MsnPths(object):
+    def __init__(self, element=''):
+        self.element = element
+        self.spectra = ''
+        self.sirius = ''
+        self.metfrag = ''
+        self.spectral_matching = ''
+
+
+class DimsPths(object):
+    def __init__(self, element=''):
+        self.element = element
+        self.spectra = ''
+        self.beams = ''
+        self.additional_info = ''
+
+
+# if __name__ == "__main__":
+#
+#     # dims_pls_pths = """
+#     # A01,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/dims_pls/A01.h5,
+#     # A02,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/dims_pls/A02.h5
+#     # """
+#     #
+#     # additional_info_pths = """
+#     # A01,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/additional/A01.tsv,
+#     # A02,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/additional/A02.tsv
+#     # """
+#     #
+#     # beams_pths = """
+#     # A01,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/beams/A01.tsv,
+#     # A02,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/beams/A02.tsv
+#     # """
+#     #
+#     # dimsn_tree_pths = """
+#     # A01,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/dimsn_trees/A01.json,
+#     # A02_1,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/dimsn_trees/A02_1.json,
+#     # A02_2,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/dimsn_trees/A02_2.json
+#     # """
+#     #
+#     # metfrag_pths = """
+#     # A01,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/metfrag/A01.tabular,
+#     # A02_1,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/metfrag/A02_1.tabular
+#     # """
+#     #
+#     # sirius_pths = """
+#     # A01,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/sirius/A01.tsv,
+#     # A02_1,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/sirius/A02_1.tsv,
+#     # A02_2,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/sirius/A02_2.tsv
+#     # """
+#     #
+#     # spectral_matching_pths = """
+#     # A01,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/spectral_matching/A01.tsv,
+#     # A02_1,/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/spectral_matching/A02_1.tsv
+#     # """
+#     #
+#     # lcms_sqlite = "/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/lcmsms.sqlite"
+#     # metab_compound_sqlite = "/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data" \
+#     #                         "/metab_compound_subset.sqlite"
+#     #
+#     # lcms_sqlite_test = "/home/tomnl/Dropbox/code/post-doc-brum/lcfrac_new/tools/lcfrac/test-data/lcmsms_TEST.sqlite"
+#     # shutil.copy(lcms_sqlite, lcms_sqlite_test)
+#     # # Setup the LCFractionation experiment object
+#     # lc_frac_exp = LcFracExp(galaxy=True, lcms_db_pth=lcms_sqlite_test, metab_compound_db_pth=metab_compound_sqlite)
+#     #
+#     # # Get connection to relevant databases
+#     # lc_frac_exp.connect2dbs()
+#     #
+#     # # Assign data paths to wells
+#     # lc_frac_exp.assign_data_pths_to_wells(dims_pls_pths,
+#     #                                       dimsn_tree_pths,
+#     #                                       spectral_matching_pths,
+#     #                                       metfrag_pths,
+#     #                                       sirius_pths,
+#     #                                       beams_pths,
+#     #                                       additional_info_pths)
+#     #
+#     # # Update the lcms database for the fractionation results
+#     # lc_frac_exp.update_lcms_db()
+#     #
+#     # # Add the data for each wells to database
+#     # lc_frac_exp.add_wells_to_db()
+#     #
+#     # # Combine annotations
+#     # lc_frac_exp.combine_annotations()
+#     #
+#     # # Add library spectra
+#     # lc_frac_exp.add_library_spectra()
+#     #
+#     # # summarise spectra
+#     # lc_frac_exp.summarise_annotation(out_tsv_pth='test.tsv')
