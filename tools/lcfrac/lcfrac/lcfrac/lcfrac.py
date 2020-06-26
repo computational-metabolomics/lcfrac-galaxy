@@ -98,12 +98,13 @@ class LcFracExp(object):
         if self.galaxy:
             # if galaxy was used we have the name within Galaxy and the identifier (which has the well number)
             for c, i in enumerate(pthl):
-                #print(c, i, c % 2)
+                print(c, i, c % 2)
                 if (c % 2) == 0:
                     bn = os.path.basename(i)
                     element = os.path.splitext(bn)[0]
                     well = os.path.splitext(bn)[0].split('_')[0]
                     if well in self.wells:
+                        print(well)
                         if dims_msn == 'dims':
                             if not self.wells[well].dims_pths.element:
                                 setattr(self.wells[well].dims_pths, 'element', element)
