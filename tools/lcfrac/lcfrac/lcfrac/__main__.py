@@ -149,7 +149,8 @@ if __name__ == "__main__":
     lc_frac_exp.combine_annotations()
 
     # Add library spectra
-    lc_frac_exp.add_library_spectra()
+    if os.path.exists(args.library_db_pth):
+        lc_frac_exp.add_library_spectra()
 
     # summarise spectra
     lc_frac_exp.summarise_annotation(out_tsv_pth=args.out_tsv)
