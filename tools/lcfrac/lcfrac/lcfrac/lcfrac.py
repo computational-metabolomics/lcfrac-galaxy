@@ -76,13 +76,13 @@ class LcFracExp(object):
 
     def connect2dbs(self):
         if self.lcms_db_pth:
-            print('connecting to lcms sqlite database')
+            print('connecting to lcms sqlite database {}'.format(self.lcms_db_pth))
             self.lcms_conn = sqlite3.connect(self.lcms_db_pth)
         if self.metab_compound_db_pth:
-            print('connecting to metab compound sqlite database')
+            print('connecting to metab compound sqlite database {}'.format(self.metab_compound_db_pth))
             self.comp_conn = sqlite3.connect(self.metab_compound_db_pth)
         if self.library_spectra_db_pth:
-            print('connecting to library spectra sqlite database')
+            print('connecting to library spectra sqlite database {}'.format(self.library_spectra_db_pth))
             self.library_conn = sqlite3.connect(self.library_spectra_db_pth)
 
 
