@@ -141,13 +141,19 @@ class LcFracExp(object):
                                   beams_pths,
                                   additional_info_pths
                                   ):
-        # Get MS1 level information
+        print('DIMS spectra')
         self.pths2wells(dims_pls_pths, 'dims', 'spectra')
+        print('MSn spectra')
         self.pths2wells(dimsn_tree_pths, 'msn', 'spectra')
+        print('MS1 annotation')
         self.pths2wells(beams_pths, 'dims', 'beams')
+        print('MS1 additional info')
         self.pths2wells(additional_info_pths, 'dims', 'additional_info')
+        print('MSn spectral matching')
         self.pths2wells(spectral_matching_pths, 'msn', 'spectral_matching')
+        print('MSn metfrag')
         self.pths2wells(metfrag_pths, 'msn', 'metfrag')
+        print('MSn sirius')
         self.pths2wells(sirius_pths, 'msn', 'sirius')
 
     def add_well_to_db(self, wellinfo):
