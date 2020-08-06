@@ -1,3 +1,4 @@
+import sys
 import csv
 import re
 import numpy as np
@@ -9,32 +10,43 @@ def process_ms1_annotation(wellinfo, lcms_conn, comp_conn, ms1_lookup_source, ms
                            ms1_lookup_checkAdducts):
 
     # write additional peak info (camera isotope/adduct annotations and precursor ion purity)
+    print('Add additional ms1 info to database')
     add_additional_peak_info(wellinfo.dims_pths.additional_info, lcms_conn, wellinfo.well_number)
 
     # write beams to sqlite database
+    print('Add BEAMS MS1 annotation info to database')
     add_beams(wellinfo.dims_pths.beams, lcms_conn, comp_conn, ms1_lookup_keepAdducts, ms1_lookup_checkAdducts,
               ms1_lookup_source,
               wellinfo.well_number)
 
 
-def process_frag_annotation(msn_pths, lcms_conn, pid_d, sirius_rank_limit):
+def process_frag_annotation(msn_pths, lcms_conn, pid_d, msn_prec_d, sirius_rank_limit):
 
     # write sirius to sqlite database
     if msn_pths.sirius:
+        print('Process sirius annotation')
         add_sirius(msn_pths.sirius, lcms_conn, pid_d, sirius_rank_limit)
 
     # write metfrag to sqlite database
     if msn_pths.metfrag:
+        print('Process metfrag annotation')
         add_metfrag(msn_pths.metfrag, lcms_conn, pid_d)
 
     # write spectral matching to sqlite database
     if msn_pths.spectral_matching:
+        print('Process spectral matching annotation')
         add_spectral_matching(msn_pths.spectral_matching, lcms_conn, pid_d)
 
+    # write spectral matching to sqlite database
+    if msn_pths.mf_annotation:
+        print('Process MF annotation from MSnPy')
+        add_mf_annotation(msn_pths.mf_annotation, lcms_conn, msn_prec_d)
 
 def add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts,  ms1_lookup_checkAdducts, ms1_lookup_source, well):
     '''
     '''
+    if not beams_pth:
+        return
     if ms1_lookup_source == 'hmdb':
         table_nm = 'hmdb'
         column_nm = 'hmdb_id'
@@ -61,12 +73,34 @@ def add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts,  ms1_lookup_ch
     c = max_row(conn, 'ms1_lookup_results', 'id')
 
     c_curs = comp_conn.cursor()
+    csv.field_size_limit(sys.maxsize)
+    rows = []
 
     with open(beams_pth, 'r') as bf:
         dr = csv.DictReader(bf, delimiter='\t')
-        rows = []
+
 
         for drow in dr:
+
+            # get pid from mz and well
+            sidi = mz_d[round(float(drow['mz']), 8)]
+
+            kal = ms1_lookup_keepAdducts.split(',')
+
+
+
+            if (ms1_lookup_keepAdducts and drow['adduct'] in kal) or (ms1_lookup_checkAdducts and drow['adduct'] in
+                                                                      sidi['adduct']):
+                valid_adduct = True
+            elif not ms1_lookup_keepAdducts and not ms1_lookup_checkAdducts:
+                valid_adduct = True
+            else:
+                valid_adduct = False
+
+            if not valid_adduct:
+                continue
+
+
             r = c_curs.execute("""SELECT inchikey FROM {} WHERE
                                                {}='{}'
                                          """.format(table_nm,
@@ -77,22 +111,6 @@ def add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts,  ms1_lookup_ch
                 inchikey = 'unknown'
             else:
                 inchikey = inchikey_r[0][0]
-
-            # get pid from mz and well
-            sidi = mz_d[round(float(drow['mz']), 8)]
-
-            kal = ms1_lookup_keepAdducts.split(',')
-
-            if (ms1_lookup_keepAdducts and sidi['adduct'] in kal) or (ms1_lookup_checkAdducts and drow['adduct'] in
-                                                                      sidi['adduct']):
-                valid_adduct = True
-            elif not ms1_lookup_keepAdducts and not ms1_lookup_checkAdducts:
-                valid_adduct = True
-            else:
-                valid_adduct = False
-
-            if not valid_adduct:
-                continue
 
             rows.append((c,
                          sidi['sid'],
@@ -108,20 +126,20 @@ def add_beams(beams_pth, conn, comp_conn, ms1_lookup_keepAdducts,  ms1_lookup_ch
                          drow['P'],
                          drow['S'],
                          drow['molecular_formula'],
-                         drow['compound_name'],
                          drow['compound_id'],
                          inchikey,
                          1  # score is always 1 for beams
                          ))
 
+
             c += 1
 
     cols = "id, sid, name, mz, exact_mass, " \
            "ppm_error," \
-           "adduct,C,H,N,O,P,S,molecular_formula,compound_name,compound_id," \
+           "adduct,C,H,N,O,P,S,molecular_formula,compound_id," \
            " inchikey, score"
-
-    insert_query_m(rows,
+    if rows:
+        insert_query_m(rows,
                    'ms1_lookup_results',
                    conn,
                    columns=cols,
@@ -140,6 +158,8 @@ def add_additional_peak_info(additional_peak_info_pth, conn, well):
     sid_mz_d = {round(float(i[0]), 8): int(i[1]) for i in cursor.execute(select)}
 
     cursor = conn.cursor()
+    if not additional_peak_info_pth:
+        return
     with open(additional_peak_info_pth, 'r') as bf:
         dr = csv.DictReader(bf, delimiter='\t')
         for drow in dr:
@@ -160,12 +180,15 @@ def add_metfrag(metfrag_pth, conn, pid_d):
     '''
 
     c = max_row(conn, 'metfrag_results', 'id')
+    if not metfrag_pth:
+        return
 
     with open(metfrag_pth, 'r') as bf:
         dr = csv.DictReader(bf, delimiter='\t')
         rows = []
 
         for drow in dr:
+
             pn = parse_name(drow['name'], pid_d)
             if not pn:
                 continue
@@ -201,7 +224,8 @@ def add_metfrag(metfrag_pth, conn, pid_d):
            "MaximumTreeDepth, MolecularFormula,MonoisotopicMass," \
            "NoExplPeaks,NumberPeaksUsed, SMILES, Score"
 
-    insert_query_m(rows,
+    if rows:
+        insert_query_m(rows,
                    'metfrag_results',
                    conn,
                    columns=cols,
@@ -212,6 +236,9 @@ def add_spectral_matching(spectral_matching_pth, conn, pid_d):
     '''
     '''
     c = max_row(conn, 'sm_matches', 'mid')
+    if not spectral_matching_pth:
+        return
+
     with open(spectral_matching_pth, 'r') as bf:
         dr = csv.DictReader(bf, delimiter='\t')
         rows = []
@@ -253,12 +280,68 @@ def add_spectral_matching(spectral_matching_pth, conn, pid_d):
            "library_precursor_ion_purity,	query_precursor_ion_purity,	" \
            "library_accession,	library_precursor_type,	library_entry_name,	" \
            "inchikey,	library_source_name,	library_compound_name"
-
-    insert_query_m(rows,
+    if rows:
+        insert_query_m(rows,
                    'sm_matches',
                    conn,
                    columns=cols,
                    db_type='sqlite')
+
+
+
+def add_mf_annotation(mf_annotation_pth, conn, msn_prec_d):
+    '''
+    '''
+
+    c = max_row(conn, 'mf_annotations', 'mfaid')
+    if not mf_annotation_pth:
+        return
+
+    # get the DIMSn peaks fo this file?
+
+    with open(mf_annotation_pth, 'r') as bf:
+        dr = csv.DictReader(bf, delimiter='\t')
+        rows = []
+
+
+        for drow in dr:
+
+            if drow['mz'] and round(float(drow['mz']), 8) in msn_prec_d:
+                sid = msn_prec_d[round(float(drow['mz']), 8)]
+            else:
+                sid = ''
+
+            rows.append((int(c),
+                         sid,
+                         drow['mz'],
+                         drow['tree_id'],
+                         drow['group_id'],
+                         drow['scan_events'],
+                         drow['max_mslevel'],
+                         drow['mf_id'],
+                         drow['molecular_formula'],
+                         drow['adduct'],
+                         drow['mass'],
+                         drow['ppm_error'],
+                         drow['rank'],
+                         drow['total_ranks'],
+                         drow['ranked_equal'],
+                         drow['trees'],
+                         drow['neutral_losses_explained']
+
+                         ))
+            c += 1
+
+
+    cols = """mfaid,sid,mz,tree_id,scan_events,max_mslevel,mf_id,molecular_formula,
+              adduct,mass,ppm_error,rank,total_ranks,ranked_equal,trees,neutral_losses_explained
+              ,filename"""
+    if rows:
+        insert_query_m(rows,
+                       'mf_annotations',
+                       conn,
+                       columns=cols,
+                       db_type='sqlite')
 
 
 def neg_min_max(x):
@@ -283,6 +366,8 @@ def parse_name(name, pid_d):
 def add_sirius(sirius_pth, conn, pid_d, rank_limit=25):
     '''
     '''
+    if not sirius_pth:
+        return
 
     with open(sirius_pth, 'r') as bf:
         dr = csv.DictReader(bf, delimiter='\t')
@@ -465,8 +550,10 @@ def combine_annotations(conn, comp_conn, weights):
     # First get all the compound information for each inchikey from each
     # result (metfrag, sirius, spectral matching)
     # First get inchikeys from sirius result
+    print('get inchikeys')
     inchikeys1 = sql_simple_select(conn, 'sirius_csifingerid_results',
                                    'inchikey2D')
+
 
     inchikeys = get_metab_compound_rows(comp_conn, inchikeys1, 'inchikey1',
                                         'inchikey')
@@ -488,11 +575,12 @@ def combine_annotations(conn, comp_conn, weights):
     inchikeys = [i for i in inchikeys if i not in old_inchikeys]
 
     # add to metab_compound in conn
+    print('Add new inchikeys to compound')
     metab_rows = get_metab_compound_rows(comp_conn, inchikeys, 'inchikey',
                                          '*')
     # biosim dict
     biosim_d = {row[0]: row[len(row) - 3] for row in metab_rows}
-
+    print(metab_rows)
     # Add rows to sqlite results database
     insert_query_m(metab_rows, 'metab_compound', conn, columns=None,
                    db_type="sqlite", ignore_flag=True)
@@ -502,6 +590,7 @@ def combine_annotations(conn, comp_conn, weights):
     # make combined dict
     # get all inchikey_pid combinations from all approaches.
     # Then loop through and check each approach and make a row for each!
+    print('Get sids')
     inchi_sid_d = get_inchikey_sid_sirius(conn,
                                           weight=weights['sirius_csifingerid'])
     inchi_sid_d = get_inchikey_sid_beams(conn,
@@ -520,6 +609,7 @@ def combine_annotations(conn, comp_conn, weights):
                                    mid="mid",
                                    weight=weights['spectral_matching'])
     # Creat rows
+    print('Combine sids')
     sid_d = {}
     for inchi_sid, results in inchi_sid_d.items():
         row = inchi_sid.split("_")
@@ -584,7 +674,7 @@ def combine_annotations(conn, comp_conn, weights):
     biosim_max_score, biosim_wscore,
     adduct_overall, wscore, rank
     """
-
+    print('insert combined results')
     insert_query_m(final_rows, "combined_annotations", conn,
                    db_type='sqlite', columns=columns)
 

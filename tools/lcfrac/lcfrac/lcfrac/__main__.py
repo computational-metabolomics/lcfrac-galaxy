@@ -25,8 +25,12 @@ if __name__ == "__main__":
                         help="Path to the LC-MS sqlite results")
     parser.add_argument('-d', '--dims_pls', type=str, required=True,
                         help="Path to the directory of dims peaklists (hdf5)")
-    parser.add_argument('-n', '--dimsn_trees', type=str, required=True,
-                        help="Path to the directory of dimsn peaklists (hdf5)")
+    parser.add_argument('-n', '--dimsn_merged', type=str, required=True,
+                        help="Path to the directory of merged dimsn peaklists (hdf5)")
+    parser.add_argument('-k', '--dimsn_non_merged', type=str, required=True,
+                        help="Path to the directory of non merged dimsn peaklists (hdf5)")
+    parser.add_argument('-p', '--dimsn_ms1_precursors', type=str, required=True,
+                        help="Path to the directory of dimsn MS1 precursors peaklists (hdf5)")
     parser.add_argument('-b', '--beams', type=str, required=True,
                         help="Path to the directory of BEAMS results")
     parser.add_argument('-m', '--metfrag', type=str, required=True,
@@ -36,8 +40,14 @@ if __name__ == "__main__":
     parser.add_argument('-x', '--spectral_matching', type=str, required=True,
                         help="Path to the directory of the spectral "
                              "matching results")
+    parser.add_argument('-g', '--mf_annotation', type=str, required=True,
+                        help="Molecular formula annotation from MSnPy")
     parser.add_argument('-f', '--frac_times_pth', type=str, required=False,
                         help="Path to the mapping of the fraction to LC times")
+    parser.add_argument('-a', '--additional_info', default=100,
+                        help="Additional information for each peak (e.g. precursor ion purity)")
+    parser.add_argument('-o', '--out_sqlite', type=str, required=False,
+                        help="Out path for sqlite database")
     parser.add_argument('--time_tolerance', type=float, default=10,
                         help="+/- this time in seconds to LC-MS peaks when searching for associated dims spectra")
     parser.add_argument('--lcms_ppm', type=float, default=5,
@@ -56,17 +66,13 @@ if __name__ == "__main__":
                         help="Weight for biosim score")
     parser.add_argument('--ms1_lookup_source', type=str, default='hmdb',
                         help="Database used for MS1 lookup source (e.g. hmdb, kegg or pubchem)")
-    parser.add_argument('-o', '--out_sqlite', type=str, required=False,
-                        help="Out path for sqlite database")
-    parser.add_argument('-g', '--galaxy', action='store_true', help="Flag if running from Galaxy")
-    parser.add_argument('-y', '--out_tsv', type=str, default='lcfrac_results.tsv',
+    parser.add_argument('--galaxy', action='store_true', help="Flag if running from Galaxy")
+    parser.add_argument('--out_tsv', type=str, default='lcfrac_results.tsv',
                         help="Out path for summary of results (tsv)")
-    parser.add_argument('-r', '--rank_limit', default=0,
+    parser.add_argument('--rank_limit', default=0,
                         help="Limit the number of annotation by rank shown in the summary tsv file")
     parser.add_argument('--sirius_rank_limit', default=25, type=int,
                         help="Limit the annotations results from SIRIUS CSI:FingerID")
-    parser.add_argument('-a', '--additional_info', default=100,
-                        help="Additional information for each peak (e.g. precursor ion purity)")
     parser.add_argument('--ms1_lookup_keepAdducts', default='',
                         help="Provide a list of adducts that should be used from the MS1 lookup (e.g. [M+H]+, [M+Na]+)")
     parser.add_argument('--ms1_lookup_checkAdducts', action='store_true',
@@ -100,6 +106,8 @@ if __name__ == "__main__":
     ms1_lookup_keepAdducts = args.ms1_lookup_keepAdducts.replace('__cb__', ']')
     ms1_lookup_keepAdducts = ms1_lookup_keepAdducts.replace('__ob__', '[')
 
+    print(ms1_lookup_keepAdducts)
+
     weights = {'sirius_csifingerid': args.weight_sirius_csifingerid,
                'metfrag': args.weight_metfrag,
                'biosim': args.weight_biosim,
@@ -132,20 +140,26 @@ if __name__ == "__main__":
 
     # Assign data paths to wells
     lc_frac_exp.assign_data_pths_to_wells(args.dims_pls,
-                                          args.dimsn_trees,
+                                          args.dimsn_merged,
+                                          args.dimsn_non_merged,
+                                          args.dimsn_ms1_precursors,
                                           args.spectral_matching,
                                           args.metfrag,
                                           args.sirius,
                                           args.beams,
-                                          args.additional_info)
+                                          args.additional_info,
+                                          args.mf_annotation)
 
     # Update the lcms database for the fractionation results
+    print('########### Update database schema ###############################')
     lc_frac_exp.update_lcms_db()
 
     # Add the data for each wells to database
+    print('########### Add wells to db        ###############################')
     lc_frac_exp.add_wells_to_db()
 
     # Combine annotations
+    print('########### Combine annotations     ###############################')
     lc_frac_exp.combine_annotations()
 
     # Add library spectra

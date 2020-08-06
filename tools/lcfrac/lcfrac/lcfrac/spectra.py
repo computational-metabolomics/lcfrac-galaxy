@@ -1,6 +1,6 @@
 import numpy as np
 from msnpy.convert import tree2peaklist
-from dimspy.portals.hdf5_portal import load_peak_matrix_from_hdf5
+from dimspy.portals.hdf5_portal import load_peak_matrix_from_hdf5, load_peaklists_from_hdf5
 from dimspy.process.peak_alignment import align_peaks
 from db import max_row, insert_query_m
 
@@ -131,10 +131,9 @@ def lcms_dims_link(conn, orig_dims_pid, time_tolerance, ppm_lcms, ppm_dims, well
                 sid = dims_row[0]
                 dims_mz = dims_row[1]
                 dims_mz_low, dims_mz_high = ppm_tol_range(dims_mz, ppm_dims)
-                print(lcms_mz, dims_mz, well_seconds_low, well_seconds_high, lcms_seconds_low, lcms_seconds_high)
                 if (lcms_mz_high >= dims_mz_low) and (dims_mz_high >= lcms_mz_low):
                     matches.append((grpid, sid, lcms_mz - dims_mz))
-                    print('MATCH!!!!')
+                    print('MATCH!!!!', (grpid, sid, lcms_mz - dims_mz))
 
     if matches:
         insert_query_m(matches,
@@ -178,8 +177,8 @@ def peaklist_to_sqlite(pl, conn, name, well, well_rtmin, well_rtmax):
 def process_ms1_spectra(wellinfo, conn):
 
     # first step is add the MS1 DIMS data to the database and get ids
-    dims_pm = load_peak_matrix_from_hdf5(wellinfo.dims_pths.spectra, compatibility_mode=False)
-    orig_align_dims_pl = dims_pm.to_peaklist('orig_dims_peaklist')
+    print(wellinfo.dims_pths.spectra,)
+    orig_align_dims_pl = load_peaklists_from_hdf5(wellinfo.dims_pths.spectra, compatibility_mode=False)[0]
 
     # save peaklist to sqlite
     orig_dims_d, orig_dims_pid = peaklist_to_sqlite(orig_align_dims_pl,
@@ -192,14 +191,18 @@ def process_ms1_spectra(wellinfo, conn):
     return orig_dims_d, orig_dims_pid
 
 
-def process_frag_spectra(wellinfo, msn_element, lcms_conn, time_tolerance, ppm_lcms, ppm_dims,
-                         orig_dims_d, orig_dims_pid):
+def process_frag_spectra(wellinfo,
+                         msn_element,
+                         lcms_conn,
+                         ppm_dims,
+                         orig_dims_d):
 
     msn_pths = wellinfo.msn_pths_c[msn_element]
+
     # Now get dimsn precursors and align
-    dimsn_non_merged_pls, \
-    dimsn_merged_pls, \
-    dimsn_precursors_pl = tree2peaklist(msn_pths.spectra, adjust_mz=False)
+    dimsn_non_merged_pls = load_peaklists_from_hdf5(msn_pths.non_merged_spectra, compatibility_mode=False)
+    dimsn_merged_pls = load_peaklists_from_hdf5(msn_pths.merged_spectra, compatibility_mode=False)
+    dimsn_precursors_pl = load_peaklists_from_hdf5(msn_pths.ms1_precursor_spectra, compatibility_mode=False)
 
     msn_prec_d, msn_prec_pid = peaklist_to_sqlite(dimsn_precursors_pl[0],
                                                   lcms_conn,
@@ -216,8 +219,8 @@ def process_frag_spectra(wellinfo, msn_element, lcms_conn, time_tolerance, ppm_l
             sxs.append((csxsid, sid_dims, sid_msn, mzdiff, 'chosen_ms1'))
 
             csxsid += 1
-
-    insert_query_m(sxs,
+    if sxs:
+        insert_query_m(sxs,
                    's_peaks_X_s_peaks',
                    conn=lcms_conn,
                    db_type='sqlite')
@@ -228,31 +231,29 @@ def process_frag_spectra(wellinfo, msn_element, lcms_conn, time_tolerance, ppm_l
     # add dimsn merged peaklist
     dimsn_sqlite(dimsn_merged_pls, msn_prec_d, msn_prec_pid, lcms_conn, wellinfo.well_number, ppm_dims)
 
-    # add LC-MS to DI-MS link
-    lcms_dims_link(lcms_conn, orig_dims_pid, time_tolerance, ppm_lcms, ppm_dims, wellinfo.rtmin, wellinfo.rtmax)
-
     cursor = lcms_conn.cursor()
     msnpy_convert_r = cursor.execute("SELECT pid, msnpy_convert_id FROM s_peak_meta WHERE "
                        "well='{}'".format(wellinfo.well_number))
-    return {spm[1]: spm[0] for spm in msnpy_convert_r.fetchall()}
+
+    return {spm[1]: spm[0] for spm in msnpy_convert_r.fetchall()}, msn_prec_d
 
 
 def add_library_spectra(conn, library_conn):
-    # print("Get all the library pids that do not have any relevant library spectra yet")
+    print("Get all the library pids that do not have any relevant library spectra yet")
     lpid_r = conn.execute("""SELECT lpid FROM sm_matches AS sm LEFT JOIN l_s_peak_meta AS lspm ON lspm.id=sm.lpid
                                 WHERE lspm.id IS NULL""")
     lpids = [str(int(i[0])) for i in lpid_r.fetchall()]
 
     lpids_str = ",".join(lpids)
 
-    # print('Get the meta data from the library')
+    print('Get the meta data from the library')
     new_lsm_r = library_conn.execute("SELECT * FROM library_spectra_meta WHERE id IN ({})".format(lpids_str))
     insert_query_m([i for i in new_lsm_r.fetchall()],
                    'l_s_peak_meta',
                    conn=conn,
                    db_type='sqlite')
 
-    # print('Get relevant library spectra')
+    print('Get relevant library spectra')
     new_ls_r = library_conn.execute("SELECT * FROM library_spectra WHERE library_spectra_meta_id IN ({})".format(
         lpids_str))
 
@@ -261,7 +262,7 @@ def add_library_spectra(conn, library_conn):
                    conn=conn,
                    db_type='sqlite')
 
-    # print('Get relevant library source information')
+    print('Get relevant library source information')
     lcms_source_id_r = conn.execute("SELECT id FROM l_source")
     lcms_source_ids = [str(int(i[0])) for i in lcms_source_id_r.fetchall()]
     lcms_source_str = ",".join(lcms_source_ids)

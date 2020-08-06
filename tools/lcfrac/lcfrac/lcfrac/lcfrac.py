@@ -13,7 +13,7 @@ from scipy.stats import rankdata
 from operator import itemgetter
 
 from db import update_lcms_db
-from spectra import process_ms1_spectra, process_frag_spectra, add_library_spectra
+from spectra import process_ms1_spectra, process_frag_spectra, add_library_spectra, lcms_dims_link
 from annotation import process_ms1_annotation, process_frag_annotation, combine_annotations, summarise_annotations
 from collections import defaultdict
 
@@ -98,18 +98,23 @@ class LcFracExp(object):
         if self.galaxy:
             # if galaxy was used we have the name within Galaxy and the identifier (which has the well number)
             for c, i in enumerate(pthl):
-                #print(c, i, c % 2)
+
                 if (c % 2) == 0:
                     bn = os.path.basename(i)
                     element = os.path.splitext(bn)[0]
                     well = os.path.splitext(bn)[0].split('_')[0]
                     if well in self.wells:
-                        #print(well)
+
                         if dims_msn == 'dims':
                             if not self.wells[well].dims_pths.element:
                                 setattr(self.wells[well].dims_pths, 'element', element)
                             elif self.wells[well].dims_pths.element != element:
-                                print('Element identifiers for DIMS data do not match')
+                                if os.path.splitext(element)[0].split('_')[0] == self.wells[well].dims_pths.element:
+                                    setattr(self.wells[well].dims_pths, 'element', os.path.splitext(element)[0].split('_')[0])
+                                else:
+                                    #print(well, 'ELEMENT1', element, 'ELEMENT2')
+                                    print(self.wells.keys())
+                                    print('Element identifiers for DIMS data do not match')
                         elif dims_msn == 'msn':
                             if not self.wells[well].msn_pths_c[element]:
                                 self.wells[well].msn_pths_c[element] = MsnPths(element=element)
@@ -134,31 +139,42 @@ class LcFracExp(object):
 
     def assign_data_pths_to_wells(self,
                                   dims_pls_pths,
-                                  dimsn_tree_pths,
+                                  dimsn_merged_pths,
+                                  dimsn_non_merged_pths,
+                                  dimsn_ms1_precursors_pths,
                                   spectral_matching_pths,
                                   metfrag_pths,
                                   sirius_pths,
                                   beams_pths,
-                                  additional_info_pths
+                                  additional_info_pths,
+                                  mf_annotation_pths
                                   ):
-        print('DIMS spectra')
+        #print('DIMS spectra')
         self.pths2wells(dims_pls_pths, 'dims', 'spectra')
-        print('MSn spectra')
-        self.pths2wells(dimsn_tree_pths, 'msn', 'spectra')
-        print('MS1 annotation')
+        #print('MSn spectra (merged)')
+        self.pths2wells(dimsn_merged_pths, 'msn', 'merged_spectra')
+        #print('MSn spectra (non merged)')
+        self.pths2wells(dimsn_non_merged_pths, 'msn', 'non_merged_spectra')
+        #print('MSn spectra (MS1 precursors)')
+        self.pths2wells(dimsn_ms1_precursors_pths, 'msn', 'ms1_precursor_spectra')
+        #print('MS1 annotation')
         self.pths2wells(beams_pths, 'dims', 'beams')
-        print('MS1 additional info')
+        #print('MS1 additional info')
         self.pths2wells(additional_info_pths, 'dims', 'additional_info')
-        print('MSn spectral matching')
+        #print('MSn spectral matching')
         self.pths2wells(spectral_matching_pths, 'msn', 'spectral_matching')
-        print('MSn metfrag')
+        #print('MSn metfrag')
         self.pths2wells(metfrag_pths, 'msn', 'metfrag')
-        print('MSn sirius')
+        #print('MSn sirius')
         self.pths2wells(sirius_pths, 'msn', 'sirius')
+        # print('MSn MF msnpy')
+        self.pths2wells(mf_annotation_pths, 'msn', 'mf_annotation')
 
     def add_well_to_db(self, wellinfo):
         print(wellinfo.well_number)
+        #print('process ms1 spectra')
         orig_dims_d, orig_dims_pid = process_ms1_spectra(wellinfo, self.lcms_conn)
+        #print('process ms1 annotation')
         process_ms1_annotation(wellinfo,
                                self.lcms_conn,
                                self.comp_conn,
@@ -166,22 +182,30 @@ class LcFracExp(object):
                                self.ms1_lookup_keepAdducts,
                                self.ms1_lookup_checkAdducts)
 
+        #print('process frag spectra')
         for element_i, msn_pths in wellinfo.msn_pths_c.items():
-            print(element_i)
-            pid_d = process_frag_spectra(wellinfo,
-                                 element_i,
-                                 self.lcms_conn,
-                                 self.time_tolerance,
-                                 self.lcms_ppm,
-                                 self.dims_ppm,
-                                 orig_dims_d,
-                                 orig_dims_pid)
+            #print(element_i, msn_pths)
+            pid_d, msn_prec_d = process_frag_spectra(wellinfo,
+                                         element_i,
+                                         self.lcms_conn,
+                                         self.dims_ppm,
+                                         orig_dims_d)
 
-            # find relevant sirius, metfrag and spectral matching for the dimsn file
+        # add LC-MS to DI-MS link
+        #print('Link LC-MS to DI-MS')
+        lcms_dims_link(self.lcms_conn, orig_dims_pid, self.time_tolerance,
+                       self.lcms_ppm, self.dims_ppm, wellinfo.rtmin,
+                       wellinfo.rtmax)
+
+        #print('Process frag annotation')
+        for element_i, msn_pths in wellinfo.msn_pths_c.items():
             process_frag_annotation(msn_pths,
                                     lcms_conn=self.lcms_conn,
                                     pid_d=pid_d,
+                                    msn_prec_d=msn_prec_d,
                                     sirius_rank_limit=self.sirius_rank_limit)
+
+
 
     def add_wells_to_db(self):
         for wellid, wellinfo in self.wells.items():
@@ -220,10 +244,13 @@ class WellInfo(object):
 class MsnPths(object):
     def __init__(self, element=''):
         self.element = element
-        self.spectra = ''
+        self.non_merged_spectra = ''
+        self.merged_spectra = ''
+        self.ms1_precursor_spectra = ''
         self.sirius = ''
         self.metfrag = ''
         self.spectral_matching = ''
+        self.mf_annotation = ''
 
 
 class DimsPths(object):

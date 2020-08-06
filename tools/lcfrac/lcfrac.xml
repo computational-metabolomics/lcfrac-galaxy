@@ -21,8 +21,18 @@
                             $i.element_identifier,$i,
                         #end for
                       '
-                   --dimsn_trees='
-                        #for $i in $dimsn_trees
+                   --dimsn_merged='
+                        #for $i in $dimsn_merged
+                            $i.element_identifier,$i,
+                        #end for
+                      '
+                   --dimsn_non_merged='
+                        #for $i in $dimsn_non_merged
+                            $i.element_identifier,$i,
+                        #end for
+                      '
+                   --dimsn_ms1_precursors='
+                        #for $i in $dimsn_ms1_precursors
                             $i.element_identifier,$i,
                         #end for
                       '
@@ -43,6 +53,12 @@
                       '
                    --spectral_matching='
                         #for $i in $spectral_matching
+                            $i.element_identifier,$i,
+                        #end for
+                   '
+
+                   --mf_annotation='
+                        #for $i in $mf_annotation
                             $i.element_identifier,$i,
                         #end for
                    '
@@ -80,8 +96,12 @@
                label="LC-MS(/MS) SQlite results"/>
         <param argument="--dims_pls" type="data_collection"  format="h5"
                label="DIMS peaklist for fractions"/>
-        <param argument="--dimsn_trees" type="data_collection" format="json" multiple="true"
-               label="MSnPy DIMSn (MS/MS) spectral trees"/>
+        <param argument="--dimsn_merged" type="data_collection" format="h5" multiple="true"
+               label="DIMSn merged"/>
+        <param argument="--dimsn_non_merged" type="data_collection" format="h5" multiple="true"
+               label="DIMSn non merged"/>
+        <param argument="--dimsn_ms1_precursors" type="data_collection" format="h5" multiple="true"
+               label="DIMSn MS1 precursors"/>
         <param argument="--beams" type="data_collection" format="tsv,tabular" multiple="true"
                label="BEAMS MS1 annotation results for DIMS"/>
         <param argument="--metfrag" type="data_collection" format="tsv,tabular" multiple="true"
@@ -90,6 +110,8 @@
                label="SIRIUS CSI:FingerID results for DIMSn"/>
         <param argument="--spectral_matching" type="data_collection" format="tsv,tabular" multiple="true"
                label="Spectral matching results for DIMSn"/>
+        <param argument="--mf_annotation" type="data_collection" format="tsv,tabular" multiple="true"
+               label="Molecular formula annotation based on MSn (MSnPy)"/>
         <param argument="--additional_info" type="data_collection" format="tsv,tabular" multiple="true"
                label="Additional details"
                help="A peak table with additional columns to include in the database (e.g. isotope, adducts, precursor

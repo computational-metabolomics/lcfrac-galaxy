@@ -53,6 +53,31 @@ def update_lcms_db(conn):
                                 )'''
               )
 
+
+    c.execute('''CREATE TABLE mf_annotations(
+                                     mfaid integer PRIMARY KEY,
+                                     mz real,
+                                     sid integer,
+                                     tree_id integer,
+                                     scan_events text,
+                                     max_mslevel integer,
+                                     mf_id integer,
+                                     molecular_formula text,
+                                     adduct text,
+                                     mass real,
+                                     ppm_error real,
+                                     rank integer,
+                                     total_ranks integer,
+                                     ranked_equal integer,
+                                     trees integer,
+                                     neutral_losses_explained integer,
+                                     filename text,
+                                     FOREIGN KEY(sid) REFERENCES
+                                     s_peaks(sid)
+                                )'''
+              )
+
+
     r = c.execute('PRAGMA table_info(ms1_lookup_results)')
     cols = r.fetchall()
     if not cols:
