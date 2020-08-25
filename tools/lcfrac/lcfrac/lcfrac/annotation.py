@@ -425,8 +425,9 @@ def add_sirius(sirius_pth, conn, pid_d, rank_limit=25):
     cols = "id, pid, msnpy_convert_id, adduct, inchikey2D, InChI, " \
            "molecularFormula," \
            "Rank, Score, Name, smiles, xlogp, pubchemids, links, bounded_score"
-
-    insert_query_m(rows, 'sirius_csifingerid_results', conn, columns=cols,
+    
+    if rows:
+      insert_query_m(rows, 'sirius_csifingerid_results', conn, columns=cols,
                    db_type='sqlite')
 
 
