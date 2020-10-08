@@ -197,13 +197,31 @@
                     <element name="A02" value="dims_pls/A02.h5"/>
                 </collection>
             </param>
-            <param name="dimsn_trees" >
+            <param name="dimsn_merged" >
+                <collection type="list">
+                    <element name="A01" value="dimsn_merged/A01.h5"/>
+                    <element name="A01_2" value="dimsn_merged/A01_2.h5"/>
+                    <element name="A02" value="dimsn_merged/A02.h5"/>
+                    <element name="A02_2" value="dimsn_merged/A02_2.h5"/>
+                    <element name="A02_3" value="dimsn_merged/A02_3.h5"/>
+                    <element name="A02_4" value="dimsn_merged/A02_4.h5"/>
+                </collection>
+            </param>
+            <param name="dimsn_merged" >
                 <collection type="list">
                     <element name="A01" value="dimsn_trees/A01.json"/>
                     <element name="A02_1" value="dimsn_trees/A02_1.json"/>
                     <element name="A02_2" value="dimsn_trees/A02_2.json"/>
                 </collection>
             </param>
+            <param name="dimsn_merged" >
+                <collection type="list">
+                    <element name="A01" value="dimsn_trees/A01.json"/>
+                    <element name="A02_1" value="dimsn_trees/A02_1.json"/>
+                    <element name="A02_2" value="dimsn_trees/A02_2.json"/>
+                </collection>
+            </param>
+
             <param name="beams" >
                 <collection type="list">
                     <element name="A01" value="beams/A01.tsv"/>
@@ -235,7 +253,7 @@
                     <element name="A02" value="additional/A02.tsv"/>
                 </collection>
             </param>
-            <param name="lcms_sqlite" value="lcmsms.sqlite"/>
+            <param name="lcms_sqlite" value="combineAnnotations_result.sqlite"/>
             <param name="library_db_type" value="local_config"/>
             <param name="comp_db" value="metab_compound_subset.sqlite"/>
             <param name="library_db" value=""/>
