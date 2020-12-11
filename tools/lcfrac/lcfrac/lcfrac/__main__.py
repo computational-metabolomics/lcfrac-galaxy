@@ -14,6 +14,7 @@ def config_strip(pth):
 
 
 if __name__ == "__main__":
+    print('LC fractionation tool')
     parser = ArgumentParser(description='Combine spectra and '
                                         'annotation results '
                                         'from and LC-MS/MS '

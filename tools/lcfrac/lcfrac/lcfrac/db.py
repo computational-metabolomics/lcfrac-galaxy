@@ -310,7 +310,8 @@ def insert_query_m(data, table, conn, columns=None, db_type='mysql',
         else:
             stmt = "INSERT " + ignore_str + " INTO " + table + " VALUES (" + \
                    type + ")"
-
+        
+        
         # execute query
         cursor = conn.cursor()
         cursor.executemany(stmt, data)

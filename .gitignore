@@ -1,3 +1,5 @@
+**/*.pyc
+tools/lcfrac/lcfrac/lcfrac/__pycache__
 .idea
 tools/lcfrac/test-data/test-data-large/
 .venv

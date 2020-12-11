@@ -444,7 +444,8 @@ def col_multiple_check(r, cols):
 def get_metab_compound_rows(comp_conn, inchikeys, inchi_level='inchikey',
                             cols='*'):
     c = comp_conn.cursor()
-    inchi_str = "','".join(inchikeys)
+    
+    inchi_str = "','".join(i for i in inchikeys if i)
 
     sql_stmt = "SELECT {} FROM metab_compound WHERE {} IN ('{" \
                "}')".format(cols, inchi_level, inchi_str)
@@ -570,11 +571,14 @@ def combine_annotations(conn, comp_conn, weights):
 
     # remove duplicates
     inchikeys = list(set(inchikeys))
-
+    
+    
     # Remove inchikeys we have already
     old_inchikeys = sql_simple_select(conn, 'metab_compound', 'inchikey')
-    inchikeys = [i for i in inchikeys if i not in old_inchikeys]
 
+    print(old_inchikeys)
+    inchikeys = [i for i in inchikeys if i not in old_inchikeys]
+    
     # add to metab_compound in conn
     print('Add new inchikeys to compound')
     metab_rows = get_metab_compound_rows(comp_conn, inchikeys, 'inchikey',
@@ -614,7 +618,7 @@ def combine_annotations(conn, comp_conn, weights):
     sid_d = {}
     for inchi_sid, results in inchi_sid_d.items():
         row = inchi_sid.split("_")
-        if row[0] == 'unknown' or row[1] == 'None':
+        if row[0].lower() == 'unknown' or row[1] == 'None':
             continue
         sid = row[1]
         row, sirius_d = add_to_row(results, 'sirius_csifingerid_results', row)
@@ -664,6 +668,7 @@ def combine_annotations(conn, comp_conn, weights):
         for i in range(0, len(ranks)):
             rows[i].append(int(ranks[i]))
         rows = sorted(rows, key=itemgetter(len(rows[0]) - 1))
+        print(rows)
         final_rows.extend(rows)
 
     columns = """
@@ -673,9 +678,11 @@ def combine_annotations(conn, comp_conn, weights):
     ms1_lookup_id,ms1_lookup_score,ms1_lookup_wscore,ms1_lookup_adduct,
     sm_mid,sm_score,sm_wscore,sm_adduct,
     biosim_max_score, biosim_wscore,
-    adduct_overall, wscore, rank
+    adduct_overall,wscore,rank
     """
     print('insert combined results')
+    print(len(final_rows[0]))
+
     insert_query_m(final_rows, "combined_annotations", conn,
                    db_type='sqlite', columns=columns)
 
@@ -699,7 +706,8 @@ def summarise_annotations(conn, out_file, rank_limit=100):
        sp.isotopes AS camera_isotopes,
        GROUP_CONCAT(DISTINCT (CAST (cpgXsp.grpid AS INTEGER) ) ) AS lc_grpid_mtchs,
        '' AS dims_sid_mtchs,
-       spm.well,  
+       spm.well, 
+       spm.name, 
        mc.inchi,
        mc.inchikey,
        mc.inchikey1,
@@ -749,7 +757,7 @@ def summarise_annotations(conn, out_file, rank_limit=100):
        c_peak_groups_X_s_peaks AS cpgXsp ON cpgXsp.sid = sp.sid
 
     WHERE (sp.sid IS NOT NULL) AND  (
-    spm.spectrum_type IS 'dimspy') AND (0=={} OR IFNULL(ca.rank<={}, 1))
+    spm.name IS 'original_aligned_peaklist') AND (0=={} OR IFNULL(ca.rank<={}, 1))
     GROUP BY sp.sid,
              IFNULL(ca.inchikey, sp.sid)
     ORDER BY spm.well,
@@ -776,7 +784,8 @@ def summarise_annotations(conn, out_file, rank_limit=100):
 
        '' AS lcms_grpid_mtchs,
        GROUP_CONCAT(DISTINCT (CAST (cpgXsp.sid AS INTEGER) ) ) AS dims_sid_mtchs,
-       spm.well,  
+       spm.well,
+       spm.name,  
        mc.inchi,
        mc.inchikey,
        mc.inchikey1,
