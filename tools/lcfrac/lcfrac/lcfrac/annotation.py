@@ -663,7 +663,7 @@ def combine_annotations(conn, comp_conn, weights):
         # Get all scores
         scores = [r[len(r) - 1] for r in rows]
 
-        ranks = rankdata(np.array(scores), 'dense')
+        ranks = rankdata(1-np.array(scores), 'dense')
 
         for i in range(0, len(ranks)):
             rows[i].append(int(ranks[i]))
