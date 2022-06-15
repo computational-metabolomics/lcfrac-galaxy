@@ -200,9 +200,16 @@ def process_frag_spectra(wellinfo,
     msn_pths = wellinfo.msn_pths_c[msn_element]
     print(wellinfo, msn_element, msn_pths.non_merged_spectra)
     # Now get dimsn precursors and align
-    dimsn_non_merged_pls = load_peaklists_from_hdf5(msn_pths.non_merged_spectra, compatibility_mode=False)
-    dimsn_merged_pls = load_peaklists_from_hdf5(msn_pths.merged_spectra, compatibility_mode=False)
-    dimsn_precursors_pl = load_peaklists_from_hdf5(msn_pths.ms1_precursor_spectra, compatibility_mode=False)
+    
+    
+    try:
+        dimsn_non_merged_pls = load_peaklists_from_hdf5(msn_pths.non_merged_spectra, compatibility_mode=False)
+        dimsn_merged_pls = load_peaklists_from_hdf5(msn_pths.merged_spectra, compatibility_mode=False)
+        dimsn_precursors_pl = load_peaklists_from_hdf5(msn_pths.ms1_precursor_spectra, compatibility_mode=False)
+    except  OSError as error:
+        print(error)
+        print("File descriptor is not associated with any terminal device")
+        return False, False
 
     msn_prec_d, msn_prec_pid = peaklist_to_sqlite(dimsn_precursors_pl[0],
                                                   lcms_conn,

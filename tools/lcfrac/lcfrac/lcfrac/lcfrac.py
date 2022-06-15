@@ -176,9 +176,9 @@ class LcFracExp(object):
 
     def add_well_to_db(self, wellinfo):
         print(wellinfo.well_number)
-        #print('process ms1 spectra')
+        print('process ms1 spectra')
         orig_dims_d, orig_dims_pid = process_ms1_spectra(wellinfo, self.lcms_conn)
-        #print('process ms1 annotation')
+        print('process ms1 annotation')
         process_ms1_annotation(wellinfo,
                                self.lcms_conn,
                                self.comp_conn,
@@ -186,28 +186,27 @@ class LcFracExp(object):
                                self.ms1_lookup_keepAdducts,
                                self.ms1_lookup_checkAdducts)
 
-        #print('process frag spectra')
+        print('process frag spectra and annotation')
         for element_i, msn_pths in wellinfo.msn_pths_c.items():
-            #print(element_i, msn_pths)
+            print(element_i, msn_pths)
             pid_d, msn_prec_d = process_frag_spectra(wellinfo,
                                          element_i,
                                          self.lcms_conn,
                                          self.dims_ppm,
                                          orig_dims_d)
-
-        # add LC-MS to DI-MS link
-        #print('Link LC-MS to DI-MS')
-        lcms_dims_link(self.lcms_conn, orig_dims_pid, self.time_tolerance,
-                       self.lcms_ppm, self.dims_ppm, wellinfo.rtmin,
-                       wellinfo.rtmax)
-
-        #print('Process frag annotation')
-        for element_i, msn_pths in wellinfo.msn_pths_c.items():
-            process_frag_annotation(msn_pths,
+            if pid_d:
+                process_frag_annotation(msn_pths,
                                     lcms_conn=self.lcms_conn,
                                     pid_d=pid_d,
                                     msn_prec_d=msn_prec_d,
                                     sirius_rank_limit=self.sirius_rank_limit)
+
+        # add LC-MS to DI-MS link
+        print('Link LC-MS to DI-MS')
+        lcms_dims_link(self.lcms_conn, orig_dims_pid, self.time_tolerance,
+                       self.lcms_ppm, self.dims_ppm, wellinfo.rtmin,
+                       wellinfo.rtmax)
+
 
 
 

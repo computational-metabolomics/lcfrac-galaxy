@@ -410,6 +410,7 @@ def add_sirius(sirius_pth, conn, pid_d, rank_limit=25):
     ##################
     # calculate bound sirius score
     ##################
+    print('CALCULATE BOUND SIRIUS SCORE')
     bounded_score_d = {}
     for pid, scores in annotation_group.items():
         score_l = []
@@ -418,6 +419,7 @@ def add_sirius(sirius_pth, conn, pid_d, rank_limit=25):
             score_l.append(abs(float(score)))
             cid_l.append(cid)
         bounded_score = neg_min_max(score_l)
+        print('bounded_score', bounded_score)
         for i in range(0, len(bounded_score)):
             bounded_score_d[cid_l[i]] = bounded_score[i]
 
