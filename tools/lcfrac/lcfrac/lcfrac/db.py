@@ -81,7 +81,7 @@ def update_lcms_db(conn):
     r = c.execute('PRAGMA table_info(ms1_lookup_results)')
     cols = r.fetchall()
     if not cols:
-        c.execute('''CREATE TABLE ms1_lookup_results(
+        c.execute('''CREATE TABLE ms1_lookup_results( 
                                                 id integer PRIMARY KEY,
                                                 grpid integer,
                                                 sid integer,
@@ -105,8 +105,8 @@ def update_lcms_db(conn):
                                                 score real,
                                                 FOREIGN KEY(grpid) REFERENCES 
                                                     c_peak_groups(grpid), 
-                                                FOREIGN KEY(pid) REFERENCES 
-                                                    s_peak_meta(pid)
+                                                FOREIGN KEY(sid) REFERENCES 
+                                                    s_peaks(sid)
                                            )'''
                   )
     elif 'msnpy_convert_id' not in cols:
@@ -259,8 +259,14 @@ def update_lcms_db(conn):
         # Don't bother with all the foreign key references - handle this later
         # in mogi if needed.
 
-    elif 'sid' not in cols:
-        c.execute('ALTER TABLE combined_annotations ADD sid integer')
+    else:
+        print(cols)
+        if not [i for i in cols if 'sid' in i]:
+            c.execute('ALTER TABLE combined_annotations ADD sid integer')
+        if not [i for i in cols if 'sirius_id' in i]:
+            c.execute('ALTER TABLE combined_annotations ADD sirius_id integer')
+
+
         #c.execute('ALTER TABLE combined_annotations ADD ms1_lookup_id integer')
 
     conn.commit()

@@ -105,15 +105,15 @@
         <param argument="--beams" type="data_collection" format="tsv,tabular" multiple="true"
                label="BEAMS MS1 annotation results for DIMS"/>
         <param argument="--metfrag" type="data_collection" format="tsv,tabular" multiple="true"
-               label="Metfrag results for DIMSn"/>
+               label="Metfrag results for DIMSn" optional="true"/>
         <param argument="--sirius" type="data_collection" format="tsv,tabular" multiple="true"
-               label="SIRIUS CSI:FingerID results for DIMSn"/>
+               label="SIRIUS CSI:FingerID results for DIMSn" optional="true"/>
         <param argument="--spectral_matching" type="data_collection" format="tsv,tabular" multiple="true"
-               label="Spectral matching results for DIMSn"/>
+               label="Spectral matching results for DIMSn" optional="true"/>
         <param argument="--mf_annotation" type="data_collection" format="tsv,tabular" multiple="true"
-               label="Molecular formula annotation based on MSn (MSnPy)"/>
+               label="Molecular formula annotation based on MSn (MSnPy)" optional="true"/>
         <param argument="--additional_info" type="data_collection" format="tsv,tabular" multiple="true"
-               label="Additional details"
+               label="Additional details" optional="true"
                help="A peak table with additional columns to include in the database (e.g. isotope, adducts, precursor
                       ion purity"/>
         <param argument="--lcms_ppm" type="float" value="5"

@@ -167,10 +167,11 @@ def add_additional_peak_info(additional_peak_info_pth, conn, well):
             sid = sid_mz_d[round(float(drow['mz']), 8)]
             stmt = """UPDATE s_peaks SET adduct='{}',isotopes='{}',dims_predicted_precursor_ion_purity={}
                     WHERE sid={}""".format(
-                                    drow['adduct'] if 'adduct' in drow else None,
-                                    drow['isotopes'] if 'isotopes' in drow else None,
-                                    drow['medianPurity'] if 'medianPurity' in drow else None,
+                                    drow['adduct'] if 'adduct' in drow else '""',
+                                    drow['isotopes'] if 'isotopes' in drow else '""',
+                                    drow['medianPurity'] if 'medianPurity' in drow else '""',                                    
                                     sid)
+            print(stmt)
             cursor.execute(stmt)
             conn.commit()
 
@@ -345,7 +346,7 @@ def add_mf_annotation(mf_annotation_pth, conn, msn_prec_d):
 
 
 def neg_min_max(x):
-    if np.equal.reduce(x):
+    if np.all(x == x[0]):
         return [1] * len(x)
     else:
         x = np.array(x)
@@ -384,14 +385,15 @@ def add_sirius(sirius_pth, conn, pid_d, rank_limit=25):
 
             if rank_limit != 0 and int(drow['rank']) > rank_limit:
                 continue
-
+            drow = {k.lower():v for k,v in drow.items()}
+            
             rows.append((c,
                          pid,
                          msnpy_convert_id,
                          drow['adduct'] if 'adduct' in drow else None,
-                         drow['inchikey2D'],
+                         drow['inchikey2d'],
                          drow['inchi'],
-                         drow['molecularFormula'],
+                         drow['molecularformula'],
                          drow['rank'],
                          drow['score'],
                          drow['name'],

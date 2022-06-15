@@ -198,7 +198,7 @@ def process_frag_spectra(wellinfo,
                          orig_dims_d):
 
     msn_pths = wellinfo.msn_pths_c[msn_element]
-
+    print(wellinfo, msn_element, msn_pths.non_merged_spectra)
     # Now get dimsn precursors and align
     dimsn_non_merged_pls = load_peaklists_from_hdf5(msn_pths.non_merged_spectra, compatibility_mode=False)
     dimsn_merged_pls = load_peaklists_from_hdf5(msn_pths.merged_spectra, compatibility_mode=False)

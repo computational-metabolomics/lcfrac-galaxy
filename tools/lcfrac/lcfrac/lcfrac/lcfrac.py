@@ -17,6 +17,8 @@ from spectra import process_ms1_spectra, process_frag_spectra, add_library_spect
 from annotation import process_ms1_annotation, process_frag_annotation, combine_annotations, summarise_annotations
 from collections import defaultdict
 
+def dims_well_check(msnpths, dims_wells):
+    return(' '.join([i for i in msnpths.split(' ') if i.strip()[0:3] in dims_wells]))
 
 class LcFracExp(object):
     """Class to handle LC-MS/MS fractionation spectra and annotations
@@ -149,26 +151,28 @@ class LcFracExp(object):
                                   additional_info_pths,
                                   mf_annotation_pths
                                   ):
+        dims_wells = [i.split(',')[0] for i in dims_pls_pths.split(' ')]
+
         #print('DIMS spectra')
         self.pths2wells(dims_pls_pths, 'dims', 'spectra')
         #print('MSn spectra (merged)')
-        self.pths2wells(dimsn_merged_pths, 'msn', 'merged_spectra')
+        self.pths2wells(dims_well_check(dimsn_merged_pths, dims_wells), 'msn', 'merged_spectra')
         #print('MSn spectra (non merged)')
-        self.pths2wells(dimsn_non_merged_pths, 'msn', 'non_merged_spectra')
+        self.pths2wells(dims_well_check(dimsn_non_merged_pths, dims_wells), 'msn', 'non_merged_spectra')
         #print('MSn spectra (MS1 precursors)')
-        self.pths2wells(dimsn_ms1_precursors_pths, 'msn', 'ms1_precursor_spectra')
+        self.pths2wells(dims_well_check(dimsn_ms1_precursors_pths, dims_wells), 'msn', 'ms1_precursor_spectra')
         #print('MS1 annotation')
         self.pths2wells(beams_pths, 'dims', 'beams')
         #print('MS1 additional info')
         self.pths2wells(additional_info_pths, 'dims', 'additional_info')
         #print('MSn spectral matching')
-        self.pths2wells(spectral_matching_pths, 'msn', 'spectral_matching')
+        self.pths2wells(dims_well_check(spectral_matching_pths, dims_wells), 'msn', 'spectral_matching')
         #print('MSn metfrag')
-        self.pths2wells(metfrag_pths, 'msn', 'metfrag')
+        self.pths2wells(dims_well_check(metfrag_pths, dims_wells), 'msn', 'metfrag')
         #print('MSn sirius')
-        self.pths2wells(sirius_pths, 'msn', 'sirius')
+        self.pths2wells(dims_well_check(sirius_pths, dims_wells), 'msn', 'sirius')
         # print('MSn MF msnpy')
-        self.pths2wells(mf_annotation_pths, 'msn', 'mf_annotation')
+        self.pths2wells(dims_well_check(mf_annotation_pths, dims_wells), 'msn', 'mf_annotation')
 
     def add_well_to_db(self, wellinfo):
         print(wellinfo.well_number)
