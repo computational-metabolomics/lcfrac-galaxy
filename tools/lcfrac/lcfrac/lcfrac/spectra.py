@@ -177,7 +177,7 @@ def peaklist_to_sqlite(pl, conn, name, well, well_rtmin, well_rtmax):
 def process_ms1_spectra(wellinfo, conn):
 
     # first step is add the MS1 DIMS data to the database and get ids
-    print(wellinfo.dims_pths.spectra,)
+    #print(wellinfo.dims_pths.spectra,)
     orig_align_dims_pl = load_peaklists_from_hdf5(wellinfo.dims_pths.spectra, compatibility_mode=False)[0]
 
     # save peaklist to sqlite
@@ -198,7 +198,7 @@ def process_frag_spectra(wellinfo,
                          orig_dims_d):
 
     msn_pths = wellinfo.msn_pths_c[msn_element]
-    print(wellinfo, msn_element, msn_pths.non_merged_spectra)
+    #print(wellinfo, msn_element, msn_pths.non_merged_spectra)
     # Now get dimsn precursors and align
     
     

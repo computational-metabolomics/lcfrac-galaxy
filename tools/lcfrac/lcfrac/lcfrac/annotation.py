@@ -171,7 +171,7 @@ def add_additional_peak_info(additional_peak_info_pth, conn, well):
                                     drow['isotopes'] if 'isotopes' in drow else '""',
                                     drow['medianPurity'] if 'medianPurity' in drow else '""',                                    
                                     sid)
-            print(stmt)
+            #print(stmt)
             cursor.execute(stmt)
             conn.commit()
 
@@ -348,6 +348,8 @@ def add_mf_annotation(mf_annotation_pth, conn, msn_prec_d):
 def neg_min_max(x):
     if np.all(x == x[0]):
         return [1] * len(x)
+    elif len(x)==1:
+        return [1]
     else:
         x = np.array(x)
         xn = (x - min(x)) / (max(x) - min(x))
@@ -419,9 +421,11 @@ def add_sirius(sirius_pth, conn, pid_d, rank_limit=25):
             score_l.append(abs(float(score)))
             cid_l.append(cid)
         bounded_score = neg_min_max(score_l)
-        print('bounded_score', bounded_score)
+        
         for i in range(0, len(bounded_score)):
             bounded_score_d[cid_l[i]] = bounded_score[i]
+            if i ==None:
+                print('bounded_score none', i, cid_l[i])
 
     # add bounded score to rows
     rows = [row + (bounded_score_d[row[0]],) for row in rows]
@@ -469,7 +473,7 @@ def sql_simple_select(conn, table_nm, cols="*"):
 def get_inchikey_sid(conn, table_nm, inchi_sid_d, pid='pid',
                      mid="id", score='score',
                      adduct='adduct', weight=1.0):
-    # Need to update to only keep the best score (in case doing scan by scan)
+    # perhaps update to only keep the best score (in case doing scan by scan)
 
     c = conn.cursor()
     sql_stmt = """SELECT m.inchikey, spXsp.sid1, m.{},
@@ -489,8 +493,10 @@ def get_inchikey_sid(conn, table_nm, inchi_sid_d, pid='pid',
 
 def inchi_sid_d_update(r, inchi_sid_d, table_nm):
     # NOTE we keep the best score for inchikey-mz-tablenm - so if we are using
-    # multiple scans or energies that give the same inchikey annotation we
-    # only keep the one with the best score (highest)
+    # multiple scans or energies for the same precurosr
+    # that give the same inchikey annotation we
+    # only keep the result one with the best score (highest) for the combined
+    # table
     for i in r:
         if not i[0]:
             # no annotation (with inchikey  so skip)
@@ -499,9 +505,13 @@ def inchi_sid_d_update(r, inchi_sid_d, table_nm):
         rowd = {'mid': i[2], 'score': i[3], 'wscore': i[4], 'adduct': i[5]}
         if inchi_sid in inchi_sid_d:
             if table_nm in inchi_sid_d[inchi_sid]:
-                if float(rowd['wscore']) > float(inchi_sid_d[inchi_sid][
+                if rowd['wscore'] != None:
+                    print(inchi_sid_d[inchi_sid][table_nm], file=sys.stderr)
+                    print(rowd, file=sys.stderr)
+                    print(table_nm, file=sys.stderr)
+                    if float(rowd['wscore']) > float(inchi_sid_d[inchi_sid][
                                                      table_nm]['wscore']):
-                    inchi_sid_d[inchi_sid][table_nm] = rowd
+                        inchi_sid_d[inchi_sid][table_nm] = rowd
             else:
                 inchi_sid_d[inchi_sid][table_nm] = rowd
         else:
@@ -589,7 +599,7 @@ def combine_annotations(conn, comp_conn, weights):
                                          '*')
     # biosim dict
     biosim_d = {row[0]: row[len(row) - 3] for row in metab_rows}
-    print(metab_rows)
+    #print(metab_rows)
     # Add rows to sqlite results database
     insert_query_m(metab_rows, 'metab_compound', conn, columns=None,
                    db_type="sqlite", ignore_flag=True)
@@ -597,7 +607,7 @@ def combine_annotations(conn, comp_conn, weights):
     # for each sid - get the (best) results for each inchikey and annotations
     # approach
     # make combined dict
-    # get all inchikey_pid combinations from all approaches.
+    # get all inchikey_sid combinations from all approaches.
     # Then loop through and check each approach and make a row for each!
     print('Get sids')
     inchi_sid_d = get_inchikey_sid_sirius(conn,
