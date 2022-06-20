@@ -1,4 +1,4 @@
-<tool id="lcfrac" name="LC-MS/MS fractionation processor - " version="0.0.12">
+<tool id="lcfrac" name="LC-MS/MS fractionation processor - " version="0.1.0">
     <description>
         Combine and process spectra and annotation results from an LC-MS(/MS) fractionation experiment
     </description>

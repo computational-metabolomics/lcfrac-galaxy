@@ -418,14 +418,20 @@ def add_sirius(sirius_pth, conn, pid_d, rank_limit=25):
         score_l = []
         cid_l = []
         for cid, score in scores.items():
+            # Make it absolute value (as that is what we do for the msPurity equiv.
+            # but essentially we could have just used a min max function that is isn't 
+            # negative... the outcome is the same though
             score_l.append(abs(float(score)))
             cid_l.append(cid)
         bounded_score = neg_min_max(score_l)
         
         for i in range(0, len(bounded_score)):
             bounded_score_d[cid_l[i]] = bounded_score[i]
-            if i ==None:
+            if not bounded_score[i]:
                 print('bounded_score none', i, cid_l[i])
+            else:
+                bounded_score_d[cid_l[i]] = bounded_score[i]
+
 
     # add bounded score to rows
     rows = [row + (bounded_score_d[row[0]],) for row in rows]
@@ -505,12 +511,11 @@ def inchi_sid_d_update(r, inchi_sid_d, table_nm):
         rowd = {'mid': i[2], 'score': i[3], 'wscore': i[4], 'adduct': i[5]}
         if inchi_sid in inchi_sid_d:
             if table_nm in inchi_sid_d[inchi_sid]:
-                if rowd['wscore'] != None:
-                    print(inchi_sid_d[inchi_sid][table_nm], file=sys.stderr)
-                    print(rowd, file=sys.stderr)
-                    print(table_nm, file=sys.stderr)
-                    if float(rowd['wscore']) > float(inchi_sid_d[inchi_sid][
-                                                     table_nm]['wscore']):
+                if rowd['wscore']:
+                    #print(inchi_sid_d[inchi_sid][table_nm], file=sys.stderr)
+                    #print(rowd, file=sys.stderr)
+                    #print(table_nm, file=sys.stderr)
+                    if not inchi_sid_d[inchi_sid][table_nm]['wscore'] or float(rowd['wscore']) > float(inchi_sid_d[inchi_sid][table_nm]['wscore']):
                         inchi_sid_d[inchi_sid][table_nm] = rowd
             else:
                 inchi_sid_d[inchi_sid][table_nm] = rowd
@@ -642,14 +647,16 @@ def combine_annotations(conn, comp_conn, weights):
 
         # Get biosim score
         biosim_score = biosim_d[row[0]] if row[0] in biosim_d else 0
-        biosim_wscore = biosim_score * 0.25
+        biosim_wscore = biosim_score * weights['biosim']
 
         # calculated weighted score
-        wscore = sirius_d['wscore'] + \
-                 metfrag_d['wscore'] + \
-                 beams_d['wscore'] + \
-                 sm_d['wscore'] + \
+        #print(sirius_d['wscore'], metfrag_d['wscore'], beams_d['wscore'], sm_d['wscore'], biosim_wscore, file=sys.stderr)
+        wscore = (sirius_d['wscore'] if sirius_d['wscore'] else 0) + \
+                 (metfrag_d['wscore'] if metfrag_d['wscore'] else 0) + \
+                 (beams_d['wscore'] if beams_d['wscore'] else 0) + \
+                 (sm_d['wscore'] if sm_d['wscore'] else 0) + \
                  biosim_wscore
+
         # get overall adduct column
         adducts = set([str(sirius_d['adduct']),
                        str(metfrag_d['adduct']),
