@@ -602,7 +602,7 @@ def combine_annotations(conn, comp_conn, weights):
     # Remove inchikeys we have already
     old_inchikeys = sql_simple_select(conn, 'metab_compound', 'inchikey')
 
-    print(old_inchikeys)
+    #print(old_inchikeys)
     inchikeys = [i for i in inchikeys if i not in old_inchikeys]
     
     # add to metab_compound in conn
@@ -659,11 +659,11 @@ def combine_annotations(conn, comp_conn, weights):
         # Get biosim score
         biosim_score = biosim_d[row[0]] if row[0] in biosim_d else 0
         biosim_score = biosim_score if biosim_score else 0
-        print(biosim_score, weights['biosim'])
+        #print(biosim_score, weights['biosim'])
         biosim_wscore = biosim_score * weights['biosim']
 
         # calculated weighted score
-        print(sirius_d['wscore'], metfrag_d['wscore'], beams_d['wscore'], sm_d['wscore'], biosim_wscore, file=sys.stderr)
+        #print(sirius_d['wscore'], metfrag_d['wscore'], beams_d['wscore'], sm_d['wscore'], biosim_wscore, file=sys.stderr)
         wscore = (sirius_d['wscore'] if sirius_d['wscore'] else 0) + \
                  (metfrag_d['wscore'] if metfrag_d['wscore'] else 0) + \
                  (beams_d['wscore'] if beams_d['wscore'] else 0) + \
@@ -702,7 +702,7 @@ def combine_annotations(conn, comp_conn, weights):
         for i in range(0, len(ranks)):
             rows[i].append(int(ranks[i]))
         rows = sorted(rows, key=itemgetter(len(rows[0]) - 1))
-        print(rows)
+        #print(rows)
         final_rows.extend(rows)
 
     columns = """

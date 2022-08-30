@@ -133,7 +133,7 @@ def lcms_dims_link(conn, orig_dims_pid, time_tolerance, ppm_lcms, ppm_dims, well
                 dims_mz_low, dims_mz_high = ppm_tol_range(dims_mz, ppm_dims)
                 if (lcms_mz_high >= dims_mz_low) and (dims_mz_high >= lcms_mz_low):
                     matches.append((grpid, sid, lcms_mz - dims_mz))
-                    print('MATCH!!!!', (grpid, sid, lcms_mz - dims_mz))
+                    #print('MATCH!!!!', (grpid, sid, lcms_mz - dims_mz))
 
     if matches:
         insert_query_m(matches,
