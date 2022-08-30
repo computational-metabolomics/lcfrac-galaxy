@@ -55,15 +55,15 @@ if __name__ == "__main__":
                         help="ppm accuracy of LC-MS experiment")
     parser.add_argument('--dims_ppm', type=float, default=5,
                         help="ppm accuracy of DI-MS experiment")
-    parser.add_argument('--weight_sirius_csifingerid', type=float, default=0.2,
+    parser.add_argument('--weight_sirius_csifingerid', type=float, default=0.25,
                         help="Weight for sirius_csifingerid annotation")
-    parser.add_argument('--weight_metfrag', type=float, default=0.2,
+    parser.add_argument('--weight_metfrag', type=float, default=0.15,
                         help="Weight for metfrag annotation")
-    parser.add_argument('--weight_beams', type=float, default=0.05,
+    parser.add_argument('--weight_beams', type=float, default=0.1,
                         help="Weight for beams annotation")
-    parser.add_argument('--weight_spectral_matching', type=float, default=0.3,
+    parser.add_argument('--weight_spectral_matching', type=float, default=0.45,
                         help="Weight for spectral matching")
-    parser.add_argument('--weight_biosim', type=float, default=0.25,
+    parser.add_argument('--weight_biosim', type=float, default=0.05,
                         help="Weight for biosim score")
     parser.add_argument('--ms1_lookup_source', type=str, default='hmdb',
                         help="Database used for MS1 lookup source (e.g. hmdb, kegg or pubchem)")
@@ -113,8 +113,9 @@ if __name__ == "__main__":
                'metfrag': args.weight_metfrag,
                'biosim': args.weight_biosim,
                'spectral_matching': args.weight_spectral_matching,
-               'beams': args.weight_beams}
-
+               'beams': args.weight_beams
+            }
+    print(weights)
     if args.out_sqlite:
         shutil.copy(args.lcms_sqlite, args.out_sqlite)
         out_sqlite = args.out_sqlite

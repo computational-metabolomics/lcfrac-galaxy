@@ -197,7 +197,7 @@ def add_metfrag(metfrag_pth, conn, pid_d):
             rows.append((int(c),
                          pn['pid'],
                          pn['msnpy_convert_id'],
-                         drow['adduct'] if 'adduct' in drow else None,
+                         drow['precursor_type'] if 'precursor_type' in drow else None,
                          drow['CompoundName'] if 'CompoundName' in drow else None,
                          drow['ExplPeaks'],
                          drow['FormulasOfExplPeaks'],
@@ -567,6 +567,13 @@ def add_to_row(results, name, row):
     return row, sr
 
 
+def get_metab_compound_all(conn):
+    c = conn.cursor()
+    c.execute("SELECT * FROM metab_compound")
+    metab_rows = c.fetchall()
+    return metab_rows
+
+
 def combine_annotations(conn, comp_conn, weights):
     # First get all the compound information for each inchikey from each
     # result (metfrag, sirius, spectral matching)
@@ -600,15 +607,19 @@ def combine_annotations(conn, comp_conn, weights):
     
     # add to metab_compound in conn
     print('Add new inchikeys to compound')
-    metab_rows = get_metab_compound_rows(comp_conn, inchikeys, 'inchikey',
-                                         '*')
-    # biosim dict
-    biosim_d = {row[0]: row[len(row) - 3] for row in metab_rows}
-    #print(metab_rows)
+    metab_rows = get_metab_compound_rows(comp_conn, inchikeys, 'inchikey', '*')
+
     # Add rows to sqlite results database
     insert_query_m(metab_rows, 'metab_compound', conn, columns=None,
                    db_type="sqlite", ignore_flag=True)
-
+    
+    # Get all metab_rows
+    metab_rows = get_metab_compound_all(conn)
+    
+    # biosim dict
+    biosim_d = {row[0]: row[len(row) - 3] for row in metab_rows}
+    #print(metab_rows)
+    
     # for each sid - get the (best) results for each inchikey and annotations
     # approach
     # make combined dict
@@ -647,10 +658,12 @@ def combine_annotations(conn, comp_conn, weights):
 
         # Get biosim score
         biosim_score = biosim_d[row[0]] if row[0] in biosim_d else 0
+        biosim_score = biosim_score if biosim_score else 0
+        print(biosim_score, weights['biosim'])
         biosim_wscore = biosim_score * weights['biosim']
 
         # calculated weighted score
-        #print(sirius_d['wscore'], metfrag_d['wscore'], beams_d['wscore'], sm_d['wscore'], biosim_wscore, file=sys.stderr)
+        print(sirius_d['wscore'], metfrag_d['wscore'], beams_d['wscore'], sm_d['wscore'], biosim_wscore, file=sys.stderr)
         wscore = (sirius_d['wscore'] if sirius_d['wscore'] else 0) + \
                  (metfrag_d['wscore'] if metfrag_d['wscore'] else 0) + \
                  (beams_d['wscore'] if beams_d['wscore'] else 0) + \
