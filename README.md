@@ -1,6 +1,5 @@
 lcfrac-galaxy
 ==============================
-|Build Status (Travis)| |galaxy-eu| |Git| |Bioconda| |License|
 
 Galaxy tool to combine the spectra and annotation from an LC-MS(/MS) fractionation experiment
 
