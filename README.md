@@ -9,4 +9,4 @@ Credits
 -------
 
 **Authors and contributors**
- - Thomas N. Lawson (t.n.lawson@bham.ac.uk) - `University of Birmingham (UK) <http://www.birmingham.ac.uk/index.aspx>`__
+ - Thomas N. Lawson (t.n.lawson@bham.ac.uk) - University of Birmingham (UK)
